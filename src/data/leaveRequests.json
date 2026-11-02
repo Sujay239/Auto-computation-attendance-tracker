@@ -1,0 +1,89 @@
+{
+  "balances": [
+    {
+      "type": "CASUAL",
+      "label": "Casual Leave",
+      "total": 12,
+      "used": 4,
+      "available": 8
+    },
+    {
+      "type": "SICK",
+      "label": "Sick Leave",
+      "total": 8,
+      "used": 2,
+      "available": 6
+    },
+    {
+      "type": "EARNED",
+      "label": "Earned Leave",
+      "total": 15,
+      "used": 3,
+      "available": 12
+    }
+  ],
+  "requests": [
+    {
+      "id": "lev-101",
+      "employeeId": "EMP-024",
+      "leaveType": "CASUAL",
+      "durationType": "FULL_DAY",
+      "startDate": "2026-11-12",
+      "endDate": "2026-11-13",
+      "daysCount": 2,
+      "reason": "Family wedding in home town",
+      "status": "PENDING",
+      "appliedOn": "2026-11-01",
+      "whatsappNoticeAcknowledged": true,
+      "comments": "Requested also in official WhatsApp group; awaiting formal acknowledgment."
+    },
+    {
+      "id": "lev-102",
+      "employeeId": "EMP-024",
+      "leaveType": "SICK",
+      "durationType": "FULL_DAY",
+      "startDate": "2026-10-15",
+      "endDate": "2026-10-15",
+      "daysCount": 1,
+      "reason": "High fever and viral flu",
+      "status": "APPROVED",
+      "appliedOn": "2026-10-14",
+      "approvedOrRejectedBy": "Sayan Roy",
+      "reviewedOn": "2026-10-15",
+      "whatsappNoticeAcknowledged": true,
+      "comments": "Approved. Rest well."
+    },
+    {
+      "id": "lev-103",
+      "employeeId": "EMP-024",
+      "leaveType": "CASUAL",
+      "durationType": "SECOND_HALF",
+      "startDate": "2026-10-06",
+      "endDate": "2026-10-06",
+      "daysCount": 0.5,
+      "reason": "Personal bank documentation visit",
+      "status": "APPROVED",
+      "appliedOn": "2026-10-05",
+      "approvedOrRejectedBy": "Sayan Roy",
+      "reviewedOn": "2026-10-05",
+      "whatsappNoticeAcknowledged": true
+    },
+    {
+      "id": "lev-104",
+      "employeeId": "EMP-024",
+      "leaveType": "EARNED",
+      "durationType": "FULL_DAY",
+      "startDate": "2026-09-20",
+      "endDate": "2026-09-25",
+      "daysCount": 5,
+      "reason": "Extended vacation during milestone sprint",
+      "status": "REJECTED",
+      "appliedOn": "2026-09-10",
+      "approvedOrRejectedBy": "Sayan Roy",
+      "reviewedOn": "2026-09-12",
+      "whatsappNoticeAcknowledged": true,
+      "comments": "Rejected due to critical client UAT milestone. Please reschedule for November."
+    }
+  ]
+}
+

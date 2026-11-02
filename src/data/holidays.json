@@ -1,0 +1,120 @@
+[
+  {
+    "id": "hol-01",
+    "name": "Republic Day",
+    "date": "2026-01-26",
+    "day": "Monday",
+    "type": "NATIONAL",
+    "description": "Celebration of the Constitution of India",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-02",
+    "name": "Holi (Festival of Colours)",
+    "date": "2026-03-04",
+    "day": "Wednesday",
+    "type": "FESTIVAL",
+    "description": "Spring Festival Celebration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-03",
+    "name": "Good Friday",
+    "date": "2026-04-03",
+    "day": "Friday",
+    "type": "PUBLIC",
+    "description": "Christian Holiday",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-04",
+    "name": "International Workers' Day",
+    "date": "2026-05-01",
+    "day": "Friday",
+    "type": "PUBLIC",
+    "description": "Labour Day Celebration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-05",
+    "name": "Independence Day",
+    "date": "2026-08-15",
+    "day": "Saturday",
+    "type": "NATIONAL",
+    "description": "National Independence Commemoration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-06",
+    "name": "Mahatma Gandhi Jayanti",
+    "date": "2026-10-02",
+    "day": "Friday",
+    "type": "NATIONAL",
+    "description": "Birth anniversary of the Father of the Nation",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-07",
+    "name": "Maha Navami / Dussehra",
+    "date": "2026-10-20",
+    "day": "Tuesday",
+    "type": "FESTIVAL",
+    "description": "Durga Puja & Vijayadashami celebration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-08",
+    "name": "Diwali / Deepavali",
+    "date": "2026-11-08",
+    "day": "Sunday",
+    "type": "FESTIVAL",
+    "description": "Festival of Lights & Prosperity",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-09",
+    "name": "Guru Nanak Jayanti",
+    "date": "2026-11-24",
+    "day": "Tuesday",
+    "type": "PUBLIC",
+    "description": "Birth anniversary of Guru Nanak Dev Ji",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-10",
+    "name": "Christmas Day",
+    "date": "2026-12-25",
+    "day": "Friday",
+    "type": "PUBLIC",
+    "description": "Christmas Celebration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-11",
+    "name": "New Year's Day",
+    "date": "2027-01-01",
+    "day": "Friday",
+    "type": "PUBLIC",
+    "description": "New Year 2027 Celebration",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-12",
+    "name": "Republic Day 2027",
+    "date": "2027-01-26",
+    "day": "Tuesday",
+    "type": "NATIONAL",
+    "description": "National Holiday",
+    "isOfficeClosed": true
+  },
+  {
+    "id": "hol-13",
+    "name": "Holi 2027",
+    "date": "2027-03-24",
+    "day": "Wednesday",
+    "type": "FESTIVAL",
+    "description": "Spring Festival of Colours",
+    "isOfficeClosed": true
+  }
+]
+

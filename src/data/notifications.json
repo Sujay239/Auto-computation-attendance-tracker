@@ -1,0 +1,53 @@
+[
+  {
+    "id": "notif-01",
+    "category": "ATTENDANCE_REMINDER",
+    "title": "Daily Check-in Reminder",
+    "message": "Good morning Sujay! Office opening is 10:00 AM (20 min buffer up to 10:20 AM). Please punch in on time.",
+    "timestamp": "2026-11-02T09:40:00",
+    "read": false,
+    "actionRoute": "/(tabs)/attendance",
+    "priority": "HIGH"
+  },
+  {
+    "id": "notif-02",
+    "category": "COMPANY_ANNOUNCEMENT",
+    "title": "Friday Office Cooking Day 🍳",
+    "message": "Weekly office cooking will take place this Friday. Selected culinary participants please coordinate with HR. Office operations continue normally.",
+    "timestamp": "2026-11-01T15:30:00",
+    "read": false,
+    "actionRoute": "/(tabs)/home",
+    "priority": "NORMAL"
+  },
+  {
+    "id": "notif-03",
+    "category": "OVERTIME_UPDATE",
+    "title": "Overtime Approved by Sayan",
+    "message": "Your overtime request of 2h 00m on Oct 29 has been approved for monetary reimbursement. Expected processing by Nov 06.",
+    "timestamp": "2026-10-30T17:15:00",
+    "read": true,
+    "actionRoute": "/(tabs)/overtime",
+    "priority": "HIGH"
+  },
+  {
+    "id": "notif-04",
+    "category": "LATE_WARNING",
+    "title": "Late Arrival Notice (Allowance 1 of 3)",
+    "message": "You checked in at 10:28 AM on Oct 30. This used 1 of your 3 monthly late allowances. Remember that arrivals after 10:45 AM count as Half Day.",
+    "timestamp": "2026-10-30T10:35:00",
+    "read": true,
+    "actionRoute": "/(tabs)/attendance",
+    "priority": "NORMAL"
+  },
+  {
+    "id": "notif-05",
+    "category": "HOLIDAY",
+    "title": "Upcoming Holiday: Diwali",
+    "message": "Diwali holiday is scheduled on Sunday, Nov 08. Wishing you and your family a festive season!",
+    "timestamp": "2026-10-25T11:00:00",
+    "read": true,
+    "actionRoute": "/(tabs)/home",
+    "priority": "LOW"
+  }
+]
+

@@ -1,0 +1,209 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { leaveService } from '../../services/leaveService';
+import { Header } from '../../components/common/Header';
+import { Card } from '../../components/common/Card';
+import { Badge } from '../../components/common/Badge';
+import { Button } from '../../components/common/Button';
+import { EmptyState } from '../../components/common/EmptyState';
+
+export const LeaveScreen: React.FC = () => {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+
+  const balances = leaveService.getBalances();
+  const requests = leaveService.getRequests();
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 300);
+  };
+
+  const filteredRequests = requests.filter((r) => {
+    if (statusFilter === 'ALL') return true;
+    return r.status === statusFilter;
+  });
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
+        <Header
+          title="Leave Management"
+          subtitle="Entitlements, Balances & Demo Submissions"
+          rightAction={
+            <Button
+              label="Apply"
+              size="sm"
+              onPress={() => router.push('/leave/apply')}
+              icon={<Ionicons name="add" size={16} color="#ffffff" />}
+            />
+          }
+        />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 24,
+        }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+
+
+        {/* Leave Balances Grid */}
+        <Text className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5 px-1">
+          Available Leave Entitlements
+        </Text>
+
+        <View className="flex-row gap-2.5 mb-4">
+          {balances.map((b) => (
+            <Card key={b.type} className="flex-1 p-3">
+              <Text className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                {b.label}
+              </Text>
+              <Text className="text-2xl font-black text-slate-900">
+                {b.available}
+              </Text>
+              <View className="flex-row items-center justify-between mt-1 pt-1 border-t border-slate-100">
+                <Text className="text-[10px] text-slate-400">Used: {b.used}</Text>
+                <Text className="text-[10px] text-slate-400">Total: {b.total}</Text>
+              </View>
+            </Card>
+          ))}
+        </View>
+
+        {/* Quick Leave Rules Card */}
+        <Card className="mb-4 bg-slate-100/80 p-3.5">
+          <Text className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            Leave Guidelines & Deductions
+          </Text>
+          <View className="space-y-1">
+            <Text className="text-[11px] text-slate-600 font-medium">
+              • Work From Home (WFH) is strictly not permitted.
+            </Text>
+            <Text className="text-[11px] text-slate-600 font-medium">
+              • Half-day leave is subject to half-day salary deduction or leave adjustment.
+            </Text>
+            <Text className="text-[11px] text-slate-600 font-medium">
+              • Leaves beyond entitlement are subject to salary deduction.
+            </Text>
+          </View>
+        </Card>
+
+        {/* Filter Tabs */}
+        <View className="flex-row items-center justify-between mb-2.5 px-1">
+          <Text className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Leave Requests History
+          </Text>
+
+          <View className="flex-row gap-1 bg-slate-200/80 p-1 rounded-xl">
+            {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((filter) => {
+              const isSelected = statusFilter === filter;
+              return (
+                <TouchableOpacity
+                  key={filter}
+                  onPress={() => setStatusFilter(filter)}
+                  activeOpacity={0.7}
+                  style={{
+                    backgroundColor: isSelected ? '#FFFFFF' : 'transparent',
+                  }}
+                  className="px-2 py-1 rounded-lg"
+                >
+                  <Text
+                    style={{ color: isSelected ? '#2563EB' : '#475569' }}
+                    className="text-[10px] font-bold"
+                  >
+                    {filter}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Requests List */}
+        {filteredRequests.length > 0 ? (
+          <View className="space-y-2.5">
+            {filteredRequests.map((req) => (
+              <TouchableOpacity
+                key={req.id}
+                onPress={() =>
+                  router.push({
+                    pathname: '/leave/details',
+                    params: { id: req.id },
+                  })
+                }
+                activeOpacity={0.75}
+              >
+                <Card className="p-3.5 mb-2.5">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-2">
+                      <View className="w-8 h-8 rounded-xl bg-purple-50 items-center justify-center">
+                        <Ionicons name="calendar-outline" size={16} color="#7C3AED" />
+                      </View>
+                      <View>
+                        <Text className="text-xs font-bold text-slate-900">
+                          {req.leaveType} LEAVE ({req.daysCount} {req.daysCount === 1 ? 'day' : 'days'})
+                        </Text>
+                        <Text className="text-[10px] text-slate-500 font-medium">
+                          {req.durationType.replace('_', ' ')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Badge
+                      label={req.status}
+                      variant={
+                        req.status === 'APPROVED'
+                          ? 'success'
+                          : req.status === 'PENDING'
+                          ? 'warning'
+                          : 'danger'
+                      }
+                      size="sm"
+                    />
+                  </View>
+
+                  <View className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 mb-1.5">
+                    <Text className="text-xs text-slate-800 font-semibold">
+                      Dates: {req.startDate} {req.endDate && req.endDate !== req.startDate ? `to ${req.endDate}` : ''}
+                    </Text>
+                    <Text className="text-xs text-slate-500 mt-0.5" numberOfLines={1}>
+                      Reason: {req.reason}
+                    </Text>
+                  </View>
+
+                  {req.comments && (
+                    <Text className="text-[10px] text-slate-500 font-medium italic">
+                      Reviewer: {req.comments}
+                    </Text>
+                  )}
+                </Card>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <EmptyState
+            title="No Leave Records"
+            description="No leave requests match the selected filter."
+            actionLabel="Apply For Leave"
+            onAction={() => router.push('/leave/apply')}
+          />
+        )}
+      </ScrollView>
+    </View>
+  );
+};
