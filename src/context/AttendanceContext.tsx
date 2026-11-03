@@ -19,6 +19,7 @@ interface AttendanceContextType {
   unreadNotificationsCount: number;
   isCheckedIn: boolean;
   isCheckedOut: boolean;
+  isLoading: boolean;
   punchIn: (customTimeStr?: string) => Promise<{ success: boolean; record?: AttendanceRecord; error?: string }>;
   punchOut: (customTimeStr?: string) => Promise<{ success: boolean; record?: AttendanceRecord; error?: string }>;
   refreshData: () => Promise<void>;
@@ -40,6 +41,7 @@ const AttendanceContext = createContext<AttendanceContextType>({
   unreadNotificationsCount: 0,
   isCheckedIn: false,
   isCheckedOut: false,
+  isLoading: true,
   punchIn: async () => ({ success: false }),
   punchOut: async () => ({ success: false }),
   refreshData: async () => {},
@@ -48,6 +50,7 @@ const AttendanceContext = createContext<AttendanceContextType>({
 
 export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | undefined>(undefined);
   const [summary, setSummary] = useState<MonthlyAttendanceSummary>(attendanceService.getMonthlySummary());
@@ -93,9 +96,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const today = attendanceService.getTodayRecord();
     setTodayRecord(today);
     setSummary(attendanceService.getMonthlySummary());
+    setIsLoading(false);
   };
 
   useEffect(() => {
+    setIsLoading(true);
     refreshData();
   }, [user?.id]);
 
@@ -136,6 +141,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         unreadNotificationsCount,
         isCheckedIn,
         isCheckedOut,
+        isLoading,
         punchIn,
         punchOut,
         refreshData,

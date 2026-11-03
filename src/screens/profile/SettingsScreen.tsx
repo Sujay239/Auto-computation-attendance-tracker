@@ -5,11 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
-import settingsData from '../../data/settings.json';
+import { APP_SETTINGS } from '../../constants/appConfig';
 
 export const SettingsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { office, latePolicy, overtimePolicy, leavePolicy, company } = settingsData;
+  const { office, latePolicy, overtimePolicy, leavePolicy, company } = APP_SETTINGS;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>

@@ -33,3 +33,41 @@ export const ROLES = {
 
 export type AppRole = (typeof ROLES)[keyof typeof ROLES];
 
+export const APP_SETTINGS = {
+  office: {
+    openingTime: '10:00',
+    openingBufferMinutes: 20,
+    closingTime: '19:00',
+    closingBufferMinutes: 30,
+    lunchDurationMinutes: 60,
+  },
+  latePolicy: {
+    maximumLateArrivalTime: '10:45',
+    monthlyAllowance: 3,
+    resetFrequency: 'monthly',
+  },
+  overtimePolicy: {
+    reimbursementDeadlineDays: 7,
+    approvalRequired: true,
+    approver: 'Sayan',
+    compensationMethods: [
+      'REIMBURSEMENT',
+      'EARLY_LEAVE_ADJUSTMENT',
+    ],
+  },
+  leavePolicy: {
+    whatsappRequestRequired: true,
+    workFromHomeAllowed: false,
+    halfDaySalaryDeductionAllowed: true,
+    halfDayLeaveAdjustmentAllowed: true,
+    saturdayHalfDaySubjectToWorkload: true,
+  },
+  company: {
+    cookingDayEnabled: true,
+    cookingDayName: 'Friday',
+    cookingDayParticipantNote:
+      'Weekly office cooking day for designated team members. Normal client deliverables and office operations remain active.',
+  },
+};
+
+

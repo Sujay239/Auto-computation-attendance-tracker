@@ -1,8 +1,8 @@
-import settingsData from '../data/settings.json';
+import { APP_SETTINGS } from '../constants/appConfig';
 import { AppSettings } from '../types/settings';
 import { AttendanceStatus } from '../types/attendance';
 
-export const settings: AppSettings = settingsData as AppSettings;
+export const settings: AppSettings = APP_SETTINGS as unknown as AppSettings;
 
 /**
  * Converts a time string (e.g. "09:55 AM", "10:20", "19:30") to minutes from start of day.

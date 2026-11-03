@@ -1,0 +1,320 @@
+{
+  "name": "Auto Computation - Admin Employees Management (List, Add & Edit)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin-employees",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "aemp-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /admin-employees",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "admin-employees-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "aemp-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "aemp-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst callerId = String(claims.sub).trim();\nconst callerRole = String(claims.role || 'EMPLOYEE').toUpperCase().trim();\n\nif (callerRole !== 'ADMIN') {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 403,\n      error: \"Forbidden: Administrator access required to manage employees.\"\n    }\n  }];\n}\n\nconst webhookBody = $('Webhook - POST /admin-employees').first().json.body || {};\nconst action = (webhookBody.action || 'LIST').toUpperCase().trim();\n\nreturn [{\n  json: {\n    valid: true,\n    callerId,\n    callerRole,\n    action,\n    body: webhookBody\n  }\n}];"
+      },
+      "id": "aemp-0004-4000-8000-000000000004",
+      "name": "Code - Enforce Admin & Parse Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "aemp-0005-4000-8000-000000000005",
+      "name": "If - Valid Admin?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.action === 'CREATE' ? `\n-- 1. Create New Employee\nDO \\$\\$\nDECLARE\n  v_emp_id VARCHAR(50);\n  v_max_id INT;\nBEGIN\n  -- Ensure personal_email column exists\n  ALTER TABLE employees ADD COLUMN IF NOT EXISTS personal_email VARCHAR(255);\n\n  IF '` + ($json.body.customId || '').trim().replace(/'/g, \"''\") + `' <> '' THEN\n    v_emp_id := '` + ($json.body.customId || '').trim().replace(/'/g, \"''\") + `';\n  ELSE\n    SELECT COALESCE(MAX(SUBSTRING(id FROM 5)::INT), 24) + 1 INTO v_max_id FROM employees WHERE id ~ '^EMP-[0-9]+$';\n    v_emp_id := 'EMP-' || LPAD(COALESCE(v_max_id, 25)::TEXT, 3, '0');\n  END IF;\n\n  INSERT INTO employees (\n    id,\n    first_name,\n    last_name,\n    email,\n    personal_email,\n    password_hash,\n    phone,\n    designation,\n    joining_date,\n    employment_type,\n    work_location,\n    role,\n    salary,\n    is_active\n  ) VALUES (\n    v_emp_id,\n    '` + ($json.body.firstName || '').trim().replace(/'/g, \"''\") + `',\n    '` + ($json.body.lastName || '').trim().replace(/'/g, \"''\") + `',\n    LOWER('` + ($json.body.email || '').trim().replace(/'/g, \"''\") + `'),\n    NULLIF(LOWER('` + ($json.body.personalEmail || '').trim().replace(/'/g, \"''\") + `'), ''),\n    crypt('` + ($json.body.password || 'Auto@2026').trim().replace(/'/g, \"''\") + `', gen_salt('bf', 8)),\n    '` + ($json.body.phone || '').trim().replace(/'/g, \"''\") + `',\n    '` + ($json.body.designation || 'Staff').trim().replace(/'/g, \"''\") + `',\n    '` + ($json.body.joiningDate || new Date().toISOString().split('T')[0]).trim() + `'::DATE,\n    '` + ($json.body.employmentType || 'Full-time').trim() + `',\n    '` + ($json.body.workLocation || 'Chinar Park, Teghoria, Kolkata (In-Office)').trim().replace(/'/g, \"''\") + `',\n    '` + (($json.body.role || 'EMPLOYEE').toUpperCase() === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE') + `',\n    ` + (parseFloat($json.body.salary) || 0) + `,\n    TRUE\n  );\n\n  -- Seed Leave Balances for 2026\n  INSERT INTO leave_balances (employee_id, leave_type, year, label, total, used) VALUES\n    (v_emp_id, 'CASUAL', EXTRACT(YEAR FROM CURRENT_DATE)::INT, 'Casual Leave', 12.0, 0.0),\n    (v_emp_id, 'SICK', EXTRACT(YEAR FROM CURRENT_DATE)::INT, 'Sick Leave', 12.0, 0.0),\n    (v_emp_id, 'EARNED', EXTRACT(YEAR FROM CURRENT_DATE)::INT, 'Earned Leave', 15.0, 0.0),\n    (v_emp_id, 'HALF_DAY', EXTRACT(YEAR FROM CURRENT_DATE)::INT, 'Half Day Leave', 6.0, 0.0)\n  ON CONFLICT DO NOTHING;\nEND \\$\\$;\n\nSELECT \n  e.id,\n  e.first_name AS \"firstName\",\n  e.last_name AS \"lastName\",\n  e.email,\n  e.personal_email AS \"personalEmail\",\n  e.phone,\n  e.designation,\n  e.joining_date::TEXT AS \"joiningDate\",\n  e.employment_type AS \"employmentType\",\n  e.work_location AS \"workLocation\",\n  e.role,\n  e.salary::FLOAT AS salary,\n  e.is_active AS \"isActive\",\n  e.avatar_url AS \"avatarUrl\"\nFROM employees e\nWHERE LOWER(e.email) = LOWER('` + ($json.body.email || '').trim().replace(/'/g, \"''\") + `')\nLIMIT 1;\n` : $json.action === 'UPDATE' ? `\n-- 2. Update Existing Employee\nALTER TABLE employees ADD COLUMN IF NOT EXISTS personal_email VARCHAR(255);\n\nUPDATE employees\nSET\n  first_name = '` + ($json.body.firstName || '').trim().replace(/'/g, \"''\") + `',\n  last_name = '` + ($json.body.lastName || '').trim().replace(/'/g, \"''\") + `',\n  email = LOWER('` + ($json.body.email || '').trim().replace(/'/g, \"''\") + `'),\n  personal_email = COALESCE(NULLIF('` + ($json.body.personalEmail || '').trim().replace(/'/g, \"''\") + `', ''), personal_email),\n  phone = '` + ($json.body.phone || '').trim().replace(/'/g, \"''\") + `',\n  designation = '` + ($json.body.designation || '').trim().replace(/'/g, \"''\") + `',\n  employment_type = '` + ($json.body.employmentType || 'Full-time').trim() + `',\n  work_location = '` + ($json.body.workLocation || 'Chinar Park, Teghoria, Kolkata (In-Office)').trim().replace(/'/g, \"''\") + `',\n  role = '` + (($json.body.role || 'EMPLOYEE').toUpperCase() === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE') + `',\n  salary = ` + (parseFloat($json.body.salary) || 0) + `,\n  is_active = ` + ($json.body.isActive === false ? 'FALSE' : 'TRUE') + `,\n  ` + (($json.body.newPassword && $json.body.newPassword.trim().length > 0) ? `password_hash = crypt('` + $json.body.newPassword.trim().replace(/'/g, \"''\") + `', gen_salt('bf', 8)),` : '') + `\n  updated_at = CURRENT_TIMESTAMP\nWHERE id = '` + ($json.body.employeeId || '').trim() + `';\n\nSELECT \n  e.id,\n  e.first_name AS \"firstName\",\n  e.last_name AS \"lastName\",\n  e.email,\n  e.personal_email AS \"personalEmail\",\n  e.phone,\n  e.designation,\n  e.joining_date::TEXT AS \"joiningDate\",\n  e.employment_type AS \"employmentType\",\n  e.work_location AS \"workLocation\",\n  e.role,\n  e.salary::FLOAT AS salary,\n  e.is_active AS \"isActive\",\n  e.avatar_url AS \"avatarUrl\"\nFROM employees e\nWHERE id = '` + ($json.body.employeeId || '').trim() + `'\nLIMIT 1;\n` : `\n-- 3. List All Employees with Today Attendance Status\nALTER TABLE employees ADD COLUMN IF NOT EXISTS personal_email VARCHAR(255);\n\nSELECT \n  e.id,\n  e.first_name AS \"firstName\",\n  e.last_name AS \"lastName\",\n  e.email,\n  e.personal_email AS \"personalEmail\",\n  e.phone,\n  e.designation,\n  e.joining_date::TEXT AS \"joiningDate\",\n  e.employment_type AS \"employmentType\",\n  e.work_location AS \"workLocation\",\n  e.role,\n  e.salary::FLOAT AS salary,\n  e.is_active AS \"isActive\",\n  e.avatar_url AS \"avatarUrl\",\n  json_build_object(\n    'checkIn', a.check_in,\n    'checkOut', a.check_out,\n    'status', COALESCE(a.status, 'PENDING'),\n    'statusLabel', COALESCE(a.status_label, 'Awaiting Punch')\n  ) AS \"todayAttendance\"\nFROM employees e\nLEFT JOIN attendances a ON a.employee_id = e.id AND a.date = CURRENT_DATE\nWHERE e.id <> '{{ $json.callerId }}'\nORDER BY e.is_active DESC, e.role DESC, e.id ASC;\n` }}",
+        "options": {}
+      },
+      "id": "aemp-0006-4000-8000-000000000006",
+      "name": "Postgres - Execute Employee Operation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const prevAction = $('Code - Enforce Admin & Parse Action').first().json.action || 'LIST';\nconst items = $input.all().map(i => i.json);\n\nif (prevAction === 'CREATE') {\n  const emp = items[0] || {};\n  return [{\n    json: {\n      success: true,\n      statusCode: 201,\n      message: \"Employee created successfully with full credentials and seeded leave entitlements.\",\n      employee: emp\n    }\n  }];\n} else if (prevAction === 'UPDATE') {\n  const emp = items[0] || {};\n  return [{\n    json: {\n      success: true,\n      statusCode: 200,\n      message: \"Employee details updated successfully.\",\n      employee: emp\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: true,\n      statusCode: 200,\n      total: items.length,\n      employees: items\n    }\n  }];\n}"
+      },
+      "id": "aemp-0007-4000-8000-000000000007",
+      "name": "Code - Format Employee Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "aemp-0008-4000-8000-000000000008",
+      "name": "Respond 200/201 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 401,\n  error: $json.error || \"Unauthorized employee access.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 401 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "aemp-0009-4000-8000-000000000009",
+      "name": "Respond Error - 401/403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        340
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /admin-employees": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Enforce Admin & Parse Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Enforce Admin & Parse Action": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Admin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Admin?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Execute Employee Operation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Execute Employee Operation": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Employee Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Employee Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200/201 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Employees"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

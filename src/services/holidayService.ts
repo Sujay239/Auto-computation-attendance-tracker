@@ -1,4 +1,3 @@
-import holidaysData from '../data/holidays.json';
 import { HolidayItem } from '../types/company';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
@@ -7,7 +6,7 @@ class HolidayService {
   private holidays: HolidayItem[] = [];
 
   constructor() {
-    this.holidays = [...(holidaysData as HolidayItem[])];
+    this.holidays = [];
   }
 
   getHolidays(): HolidayItem[] {

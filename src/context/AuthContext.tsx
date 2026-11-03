@@ -7,10 +7,11 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (credentials: AuthCredentials) => Promise<{ success: boolean; error?: string }>;
+  login: (credentials: AuthCredentials) => Promise<{ success: boolean; role?: string; employee?: Employee; error?: string }>;
   logout: () => Promise<void>;
   updateUser: (employee: Employee) => void;
   updateAvatar: (base64Uri: string) => Promise<{ success: boolean; error?: string }>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   updateUser: () => {},
   updateAvatar: async () => ({ success: false }),
+  changePassword: async () => ({ success: false }),
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -30,12 +32,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Check initial auth state
-    const current = authService.getCurrentEmployee();
-    const currentToken = authService.getToken();
-    setUser(current);
-    setToken(currentToken);
-    setIsLoading(false);
+    // Check and restore persistent auth state from AsyncStorage
+    const restoreSession = async () => {
+      try {
+        const session = await authService.initSession();
+        if (session.token && session.employee) {
+          setUser(session.employee);
+          setToken(session.token);
+        }
+      } catch (e) {
+        console.warn('[AuthContext] Session restore error:', e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    restoreSession();
   }, []);
 
   const login = async (credentials: AuthCredentials) => {
@@ -45,7 +57,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (result.success && result.employee) {
       setUser(result.employee);
       setToken(result.token || authService.getToken());
-      return { success: true };
+      return { 
+        success: true, 
+        role: result.employee.role || 'EMPLOYEE',
+        employee: result.employee 
+      };
     }
     return { success: false, error: result.error };
   };
@@ -71,6 +87,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, error: res.error };
   };
 
+  const changePassword = async (oldPassword: string, newPassword: string) => {
+    return await authService.changePassword(oldPassword, newPassword);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -82,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         updateUser,
         updateAvatar,
+        changePassword,
       }}
     >
       {children}

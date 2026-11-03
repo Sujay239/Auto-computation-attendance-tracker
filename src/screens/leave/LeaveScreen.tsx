@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,7 @@ export const LeaveScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { leaveBalances, refreshData: refreshAttendance } = useAttendance();
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [requests, setRequests] = useState<LeaveRequest[]>(leaveService.getRequests());
@@ -40,6 +42,8 @@ export const LeaveScreen: React.FC = () => {
       }
     } catch {
       // keep existing state
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -89,9 +93,16 @@ export const LeaveScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-
-
-        {/* Leave Balances Grid */}
+        {loading && requests.length === 0 && balances.length === 0 ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Loading leave balances & applications...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Leave Balances Grid */}
         <Text className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5 px-1">
           Available Leave Entitlements
         </Text>
@@ -232,6 +243,8 @@ export const LeaveScreen: React.FC = () => {
             actionLabel="Apply For Leave"
             onAction={() => router.push('/leave/apply')}
           />
+        )}
+          </>
         )}
       </ScrollView>
     </View>

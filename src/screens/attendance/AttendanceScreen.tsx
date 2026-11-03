@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,7 +21,7 @@ import { PunchOutModal } from '../../components/attendance/PunchOutModal';
 export const AttendanceScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { todayRecord, isCheckedIn, isCheckedOut, punchIn, punchOut, records, summary, refreshData } =
+  const { todayRecord, isCheckedIn, isCheckedOut, punchIn, punchOut, records, summary, refreshData, isLoading } =
     useAttendance();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -122,7 +123,16 @@ export const AttendanceScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Today's Live Attendance Clock Card */}
+        {isLoading && !todayRecord ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Syncing live attendance data...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Today's Live Attendance Clock Card */}
         <Card className="mb-4">
           <View className="flex-row items-center justify-between mb-3">
             <View>
@@ -435,6 +445,8 @@ export const AttendanceScreen: React.FC = () => {
             </View>
           </View>
         </Card>
+          </>
+        )}
       </ScrollView>
 
       {/* Confirmation Modal to prevent accidental punch out */}

@@ -1,0 +1,320 @@
+{
+  "name": "Auto Computation - Admin Dashboard (Overview & Live Stream)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin-dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "adash-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /admin-dashboard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "admin-dashboard-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "adash-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "adash-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst callerId = String(claims.sub).trim();\nconst callerRole = String(claims.role || 'EMPLOYEE').toUpperCase().trim();\n\nif (callerRole !== 'ADMIN') {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 403,\n      error: \"Forbidden: Administrator access required to view Admin Dashboard.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    callerId: callerId,\n    callerRole: callerRole\n  }\n}];"
+      },
+      "id": "adash-0004-4000-8000-000000000004",
+      "name": "Code - Enforce Admin Role",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "adash-0005-4000-8000-000000000005",
+      "name": "If - Valid Admin?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH \ntoday_info AS (\n  SELECT CURRENT_DATE::TEXT AS today_str\n),\nstaff_stats AS (\n  SELECT \n    COUNT(*) FILTER (WHERE UPPER(COALESCE(role, 'EMPLOYEE')) = 'EMPLOYEE') AS total_employees,\n    COUNT(*) FILTER (WHERE is_active = TRUE AND UPPER(COALESCE(role, 'EMPLOYEE')) = 'EMPLOYEE' AND id NOT LIKE 'ADM%') AS active_employees\n  FROM employees\n),\nattendance_stats AS (\n  SELECT \n    COUNT(*) FILTER (WHERE a.status IN ('PRESENT', 'ON_TIME', 'WITHIN_BUFFER', 'LATE', 'HALF_DAY')) AS present_today,\n    COUNT(*) FILTER (WHERE a.status = 'ON_TIME') AS on_time_today,\n    COUNT(*) FILTER (WHERE a.status = 'WITHIN_BUFFER') AS within_buffer_today,\n    COUNT(*) FILTER (WHERE a.status = 'LATE') AS late_today,\n    COUNT(*) FILTER (WHERE a.status = 'HALF_DAY' OR a.is_half_day_case = TRUE) AS half_day_today,\n    COUNT(*) FILTER (WHERE a.status = 'ABSENT') AS absent_today,\n    COUNT(*) FILTER (WHERE a.status = 'LEAVE') AS on_leave_today\n  FROM attendances a\n  JOIN employees e ON e.id = a.employee_id\n  WHERE a.date = CURRENT_DATE \n    AND UPPER(COALESCE(e.role, 'EMPLOYEE')) = 'EMPLOYEE'\n    AND e.id NOT LIKE 'ADM%'\n),\npending_leaves AS (\n  SELECT COUNT(*) AS count\n  FROM leave_requests\n  WHERE status = 'PENDING'\n),\npending_overtime AS (\n  SELECT COUNT(*) AS count\n  FROM overtime_records\n  WHERE status = 'PENDING'\n),\npunches_feed AS (\n  SELECT COALESCE(json_agg(json_build_object(\n    'id', COALESCE(a.id, 'none-' || e.id),\n    'employeeId', e.id,\n    'employeeName', (e.first_name || ' ' || e.last_name),\n    'designation', e.designation,\n    'avatarUrl', e.avatar_url,\n    'role', e.role,\n    'checkIn', a.check_in,\n    'checkOut', a.check_out,\n    'status', COALESCE(a.status, 'PENDING'),\n    'statusLabel', COALESCE(a.status_label, 'Awaiting Punch'),\n    'isHalfDayCase', COALESCE(a.is_half_day_case, FALSE),\n    'lateAllowanceUsed', a.late_allowance_used\n  ) ORDER BY \n    CASE WHEN a.check_in IS NOT NULL THEN 1 ELSE 2 END,\n    a.check_in_timestamp DESC NULLS LAST,\n    e.id ASC), '[]'::json) AS feed\n  FROM employees e\n  LEFT JOIN attendances a ON a.employee_id = e.id AND a.date = CURRENT_DATE\n  WHERE e.is_active = TRUE \n    AND UPPER(COALESCE(e.role, 'EMPLOYEE')) = 'EMPLOYEE'\n    AND e.id NOT LIKE 'ADM%'\n)\nSELECT \n  (SELECT today_str FROM today_info) AS today_date,\n  (SELECT active_employees FROM staff_stats) AS total_employees,\n  COALESCE((SELECT present_today FROM attendance_stats), 0) AS present_today,\n  COALESCE((SELECT on_time_today FROM attendance_stats), 0) AS on_time_today,\n  COALESCE((SELECT within_buffer_today FROM attendance_stats), 0) AS within_buffer_today,\n  COALESCE((SELECT late_today FROM attendance_stats), 0) AS late_today,\n  COALESCE((SELECT half_day_today FROM attendance_stats), 0) AS half_day_today,\n  COALESCE((SELECT absent_today FROM attendance_stats), 0) AS absent_today,\n  COALESCE((SELECT on_leave_today FROM attendance_stats), 0) AS on_leave_today,\n  (SELECT count FROM pending_leaves) AS pending_leaves_count,\n  (SELECT count FROM pending_overtime) AS pending_overtime_count,\n  (SELECT feed FROM punches_feed) AS feed;",
+        "options": {}
+      },
+      "id": "adash-0006-4000-8000-000000000006",
+      "name": "Postgres - Fetch Admin Dashboard Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const row = $input.first().json || {};\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    stats: {\n      todayDate: row.today_date || new Date().toISOString().split('T')[0],\n      totalEmployees: parseInt(row.total_employees || '0', 10),\n      presentToday: parseInt(row.present_today || '0', 10),\n      onTimeToday: parseInt(row.on_time_today || '0', 10),\n      withinBufferToday: parseInt(row.within_buffer_today || '0', 10),\n      lateToday: parseInt(row.late_today || '0', 10),\n      halfDayToday: parseInt(row.half_day_today || '0', 10),\n      absentToday: parseInt(row.absent_today || '0', 10),\n      onLeaveToday: parseInt(row.on_leave_today || '0', 10),\n      pendingLeavesCount: parseInt(row.pending_leaves_count || '0', 10),\n      pendingOvertimeCount: parseInt(row.pending_overtime_count || '0', 10),\n      todayPunchesFeed: Array.isArray(row.feed) ? row.feed : []\n    }\n  }\n}];"
+      },
+      "id": "adash-0007-4000-8000-000000000007",
+      "name": "Code - Format Dashboard Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "adash-0008-4000-8000-000000000008",
+      "name": "Respond 200 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 401,\n  error: $json.error || \"Unauthorized access.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 401 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "adash-0009-4000-8000-000000000009",
+      "name": "Respond Error - 401/403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        340
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /admin-dashboard": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Enforce Admin Role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Enforce Admin Role": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Admin?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Admin?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Fetch Admin Dashboard Stats",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Fetch Admin Dashboard Stats": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Dashboard Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Dashboard Output": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Dashboard"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

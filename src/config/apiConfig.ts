@@ -13,7 +13,7 @@ export const API_CONFIG = {
    * 
    * You can override this dynamically via the EXPO_PUBLIC_N8N_URL environment variable.
    */
-  BASE_URL: process.env.EXPO_PUBLIC_N8N_URL || 'http://localhost:5678/webhook',
+  BASE_URL: process.env.EXPO_PUBLIC_N8N_URL || 'https://n8n.srv917960.hstgr.cloud/webhook',
 
   ENDPOINTS: {
     LOGIN: '/auth-login',
@@ -29,6 +29,9 @@ export const API_CONFIG = {
     HOLIDAYS: '/holidays',
     PROFILE: '/profile-management',
     SALARY_DEDUCTIONS: '/salary-deductions',
+    ADMIN_DASHBOARD: '/admin-dashboard',
+    ADMIN_EMPLOYEES: '/admin-employees',
+    AUTH_VERIFY: '/auth-verify',
   },
 
   TIMEOUT_MS: 12000,

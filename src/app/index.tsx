@@ -5,17 +5,21 @@ import { useAuth } from '../context/AuthContext';
 
 export default function IndexScreen() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
     if (!isLoading) {
       if (isAuthenticated) {
-        router.replace('/(tabs)/home');
+        if (user?.role === 'ADMIN') {
+          router.replace('/(admin)/home' as any);
+        } else {
+          router.replace('/(tabs)/home');
+        }
       } else {
         router.replace('/login');
       }
     }
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, user]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' }}>

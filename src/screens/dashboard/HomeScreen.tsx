@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,8 +20,6 @@ import { Avatar } from '../../components/common/Avatar';
 import { leaveService } from '../../services/leaveService';
 import { overtimeService } from '../../services/overtimeService';
 import { notificationService } from '../../services/notificationService';
-import holidaysData from '../../data/holidays.json';
-import companyData from '../../data/company.json';
 import { PunchOutModal } from '../../components/attendance/PunchOutModal';
 
 export const HomeScreen: React.FC = () => {
@@ -39,6 +38,7 @@ export const HomeScreen: React.FC = () => {
     upcomingHoliday,
     unreadNotificationsCount,
     refreshData,
+    isLoading,
   } = useAttendance();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -46,7 +46,7 @@ export const HomeScreen: React.FC = () => {
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
 
-  const displayHoliday = upcomingHoliday || (holidaysData && holidaysData.length > 0 ? holidaysData[0] : null);
+  const displayHoliday = upcomingHoliday || null;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -123,7 +123,7 @@ export const HomeScreen: React.FC = () => {
             >
               <Avatar
                 uri={user?.avatarUrl}
-                name={user ? `${user.firstName} ${user.lastName}` : 'Sujay Verma'}
+                name={user ? `${user.firstName} ${user.lastName}` : 'Staff'}
                 size={46}
                 showStatusDot
               />
@@ -134,10 +134,10 @@ export const HomeScreen: React.FC = () => {
                 {getGreeting()},
               </Text>
               <Text className="text-base font-black text-slate-900 leading-tight">
-                {user ? `${user.firstName} ${user.lastName}` : 'Sujay Verma'}
+                {user ? `${user.firstName} ${user.lastName}` : 'Employee'}
               </Text>
               <Text className="text-[11px] text-blue-600 font-semibold">
-                {user?.designation || 'Senior Full Stack Engineer'}
+                {user?.designation || 'Staff'}
               </Text>
             </View>
           </View>
@@ -174,18 +174,27 @@ export const HomeScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Date & Shift Info Pill */}
-        <View className="flex-row items-center justify-between bg-blue-50/80 px-3.5 py-2.5 rounded-xl mb-4 border border-blue-100">
-          <View className="flex-row items-center gap-2">
-            <Ionicons name="calendar-outline" size={15} color="#2563EB" />
-            <Text className="text-xs font-bold text-blue-900">
-              {todayDateString}
+        {isLoading && !todayRecord ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#4F46E5" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Syncing live attendance dashboard...
             </Text>
           </View>
-          <Text className="text-[11px] font-semibold text-blue-700">
-            Shift: 10:00 AM - 07:00 PM
-          </Text>
-        </View>
+        ) : (
+          <>
+            {/* Date & Shift Info Pill */}
+            <View className="flex-row items-center justify-between bg-blue-50/80 px-3.5 py-2.5 rounded-xl mb-4 border border-blue-100">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="calendar-outline" size={15} color="#2563EB" />
+                <Text className="text-xs font-bold text-blue-900">
+                  {todayDateString}
+                </Text>
+              </View>
+              <Text className="text-[11px] font-semibold text-blue-700">
+                Shift: 10:00 AM - 07:00 PM
+              </Text>
+            </View>
 
         {/* Primary Card: Today's Live Attendance Punch */}
         <Card className="mb-4">
@@ -498,6 +507,8 @@ export const HomeScreen: React.FC = () => {
               </View>
             </View>
           </TouchableOpacity>
+        )}
+          </>
         )}
       </ScrollView>
 

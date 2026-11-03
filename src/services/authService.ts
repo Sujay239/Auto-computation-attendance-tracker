@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthCredentials, Employee } from '../types/employee';
 import { API_CONFIG } from '../config/apiConfig';
 
@@ -8,14 +9,76 @@ export interface LoginResult {
   error?: string;
 }
 
+const STORAGE_KEYS = {
+  TOKEN: '@auto_comp_auth_token',
+  USER: '@auto_comp_auth_user',
+};
+
 class AuthService {
   private currentEmployee: Employee | null = null;
   private token: string | null = null;
 
   constructor() {
-    // Session starts unauthenticated - real authentication required
     this.currentEmployee = null;
     this.token = null;
+  }
+
+  /**
+   * Restore persisted session from AsyncStorage on app startup
+   */
+  async initSession(): Promise<{ token: string | null; employee: Employee | null }> {
+    try {
+      const [storedToken, storedUserJson] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.TOKEN),
+        AsyncStorage.getItem(STORAGE_KEYS.USER),
+      ]);
+
+      if (storedToken && storedUserJson) {
+        // 1. Check if token is expired
+        if (this.isTokenExpired(storedToken)) {
+          console.log('[AuthService] Stored token has expired. Clearing session.');
+          await this.logout();
+          return { token: null, employee: null };
+        }
+
+        // 2. Restore in-memory session
+        const employee = JSON.parse(storedUserJson) as Employee;
+        this.token = storedToken;
+        this.currentEmployee = employee;
+
+        console.log(`[AuthService] Session restored for ${employee.id} (${employee.role}).`);
+        return { token: this.token, employee: this.currentEmployee };
+      }
+    } catch (e) {
+      console.warn('[AuthService] Failed to load persisted session from storage:', e);
+    }
+    return { token: null, employee: null };
+  }
+
+  /**
+   * Check if a JWT token has expired by inspecting the exp claim
+   */
+  private isTokenExpired(token: string): boolean {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return false;
+      const base64Url = parts[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const parsed = JSON.parse(jsonPayload);
+      if (parsed.exp && typeof parsed.exp === 'number') {
+        const currentTime = Math.floor(Date.now() / 1000);
+        return currentTime >= parsed.exp;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -60,6 +123,16 @@ class AuthService {
         this.currentEmployee = emp;
         this.token = data.token || null;
 
+        // Persist session into AsyncStorage
+        try {
+          if (this.token) {
+            await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, this.token);
+          }
+          await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(this.currentEmployee));
+        } catch (storageErr) {
+          console.warn('[AuthService] Failed to persist session to storage:', storageErr);
+        }
+
         return {
           success: true,
           employee: this.currentEmployee,
@@ -98,9 +171,21 @@ class AuthService {
     }
   }
 
+  /**
+   * Log out employee and remove saved credentials from AsyncStorage
+   */
   async logout(): Promise<void> {
     this.currentEmployee = null;
     this.token = null;
+    try {
+      await Promise.all([
+        AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+        AsyncStorage.removeItem(STORAGE_KEYS.USER),
+      ]);
+      console.log('[AuthService] Stored session cleared.');
+    } catch (e) {
+      console.warn('[AuthService] Error clearing storage on logout:', e);
+    }
   }
 
   getCurrentEmployee(): Employee | null {
@@ -122,7 +207,19 @@ class AuthService {
   }
 
   isAuthenticated(): boolean {
-    return this.currentEmployee !== null;
+    return this.currentEmployee !== null && this.token !== null;
+  }
+
+  /**
+   * Update locally stored user data
+   */
+  async updateUser(employee: Employee): Promise<void> {
+    this.currentEmployee = employee;
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(employee));
+    } catch (e) {
+      console.warn('[AuthService] Error updating stored employee:', e);
+    }
   }
 
   /**
@@ -159,9 +256,11 @@ class AuthService {
   }
 
   /**
-   * Update employee avatar (stored as base64 in PostgreSQL avatar_url)
+   * Update employee avatar image (stored as Base64 in PostgreSQL database)
    */
-  async updateAvatar(avatarBase64: string): Promise<{ success: boolean; employee?: Employee; error?: string }> {
+  async updateAvatar(
+    base64Uri: string
+  ): Promise<{ success: boolean; employee?: Employee; error?: string }> {
     const token = this.getToken();
     if (!token) {
       return { success: false, error: 'Unauthorized: Authentication token required.' };
@@ -173,33 +272,32 @@ class AuthService {
         headers: this.getAuthHeaders(),
         body: JSON.stringify({
           action: 'UPDATE_AVATAR',
-          avatar: avatarBase64,
+          avatar: base64Uri,
         }),
       });
 
       const res = await response.json();
-      if (response.ok && res.success && res.employee) {
-        if (this.currentEmployee) {
-          this.currentEmployee = {
-            ...this.currentEmployee,
-            avatarUrl: res.employee.avatarUrl,
-          };
+      if (response.ok && (res.success || res.employee)) {
+        const updated = res.employee as Employee;
+        if (updated) {
+          await this.updateUser(updated);
         }
-        return { success: true, employee: this.currentEmployee || res.employee };
+        return { success: true, employee: updated };
       }
-      return { success: false, error: res.error || 'Failed to update avatar image.' };
+      return { success: false, error: res.error || 'Failed to update avatar photo.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Network error while updating avatar.' };
+      return { success: false, error: err.message || 'Network error updating avatar.' };
     }
   }
 
   /**
-   * Update employee personal details (phone, avatarUrl)
+   * Update profile details (e.g. phone) in database
    */
-  async updateProfile(params: {
-    phone?: string;
-    avatarUrl?: string;
-  }): Promise<{ success: boolean; employee?: Employee; error?: string }> {
+  async updateProfile(data: { phone?: string; avatar?: string }): Promise<{
+    success: boolean;
+    employee?: Employee;
+    error?: string;
+  }> {
     const token = this.getToken();
     if (!token) {
       return { success: false, error: 'Unauthorized: Authentication token required.' };
@@ -211,23 +309,22 @@ class AuthService {
         headers: this.getAuthHeaders(),
         body: JSON.stringify({
           action: 'UPDATE_PROFILE',
-          ...params,
+          phone: data.phone,
+          avatar: data.avatar,
         }),
       });
 
       const res = await response.json();
-      if (response.ok && res.success && res.employee) {
-        if (this.currentEmployee) {
-          this.currentEmployee = {
-            ...this.currentEmployee,
-            ...res.employee,
-          };
+      if (response.ok && (res.success || res.employee)) {
+        const updated = res.employee as Employee;
+        if (updated) {
+          await this.updateUser(updated);
         }
-        return { success: true, employee: this.currentEmployee || res.employee };
+        return { success: true, employee: updated };
       }
-      return { success: false, error: res.error || 'Failed to update profile.' };
+      return { success: false, error: res.error || 'Failed to update profile details.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Network error while updating profile.' };
+      return { success: false, error: err.message || 'Network error updating profile.' };
     }
   }
 }

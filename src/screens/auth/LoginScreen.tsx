@@ -46,7 +46,11 @@ export const LoginScreen: React.FC = () => {
     setIsSubmitting(false);
 
     if (result.success) {
-      router.replace('/(tabs)/home');
+      if (result.role === 'ADMIN') {
+        router.replace('/(admin)/home' as any);
+      } else {
+        router.replace('/(tabs)/home');
+      }
     } else {
       setError(result.error || 'Authentication failed. Please verify your credentials.');
     }

@@ -1,4 +1,3 @@
-import notificationsData from '../data/notifications.json';
 import { NotificationItem } from '../types/notification';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
@@ -8,7 +7,7 @@ class NotificationService {
   private unreadCountOverride: number | null = null;
 
   constructor() {
-    this.notifications = [...(notificationsData as NotificationItem[])];
+    this.notifications = [];
   }
 
   getNotifications(): NotificationItem[] {

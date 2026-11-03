@@ -1,15 +1,21 @@
-import overtimeData from '../data/overtime.json';
 import { OvertimeRecord, OvertimeSummary } from '../types/overtime';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
+
+const DEFAULT_OVERTIME_SUMMARY: OvertimeSummary = {
+  totalApprovedHours: '0.0h',
+  totalPendingHours: '0.0h',
+  earlyLeaveHoursAvailable: '0.0h',
+  reimbursementPendingCount: 0,
+};
 
 class OvertimeService {
   private summary: OvertimeSummary;
   private records: OvertimeRecord[] = [];
 
   constructor() {
-    this.summary = { ...(overtimeData.summary as OvertimeSummary) };
-    this.records = [...(overtimeData.records as OvertimeRecord[])];
+    this.summary = { ...DEFAULT_OVERTIME_SUMMARY };
+    this.records = [];
   }
 
   getSummary(): OvertimeSummary {

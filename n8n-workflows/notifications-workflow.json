@@ -114,7 +114,8 @@
           "string": [
             {
               "value1": "={{ $json.action }}",
-              "value2": "LIST"
+              "value2": "LIST",
+              "operation": "equal"
             }
           ]
         }

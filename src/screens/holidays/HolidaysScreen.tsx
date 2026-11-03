@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import { Badge } from '../../components/common/Badge';
 export const HolidaysScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [filterType, setFilterType] = useState<'ALL' | 'UPCOMING' | 'NATIONAL' | 'FESTIVAL'>('ALL');
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allHolidays, setAllHolidays] = useState<HolidayItem[]>(holidayService.getHolidays());
   const [upcomingHolidays, setUpcomingHolidays] = useState<HolidayItem[]>(holidayService.getUpcomingHolidays());
@@ -36,6 +38,8 @@ export const HolidaysScreen: React.FC = () => {
       }
     } catch {
       // keep existing
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -103,7 +107,16 @@ export const HolidaysScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Next Upcoming Holiday Banner */}
+        {loading && allHolidays.length === 0 ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Loading company holiday calendar...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Next Upcoming Holiday Banner */}
         {nextHolidayInfo.holiday && (
           <View
             style={{
@@ -190,7 +203,7 @@ export const HolidaysScreen: React.FC = () => {
         <View className="flex-row items-center gap-2 mb-3">
           {(
             [
-              { key: 'ALL', label: 'All (13)' },
+              { key: 'ALL', label: `All (${allHolidays.length})` },
               { key: 'UPCOMING', label: `Upcoming (${upcomingHolidays.length})` },
               { key: 'NATIONAL', label: 'National' },
               { key: 'FESTIVAL', label: 'Festivals' },
@@ -321,6 +334,8 @@ export const HolidaysScreen: React.FC = () => {
         <Text className="text-[11px] text-slate-400 text-center mt-5">
           Auto Computation • Official HR Holiday Calendar 2026-2027
         </Text>
+          </>
+        )}
       </ScrollView>
     </View>
   );

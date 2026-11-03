@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -18,6 +19,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 export const NotificationsScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [loading, setLoading] = useState<boolean>(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>(
     notificationService.getNotifications()
   );
@@ -31,6 +33,8 @@ export const NotificationsScreen: React.FC = () => {
       }
     } catch {
       // keep existing
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,7 +109,14 @@ export const NotificationsScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {notifications.length > 0 ? (
+        {loading && notifications.length === 0 ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Loading notifications & alerts...
+            </Text>
+          </View>
+        ) : notifications.length > 0 ? (
           <View className="space-y-2.5">
             {notifications.map((item) => {
               const iconMeta = getCategoryIcon(item.category);

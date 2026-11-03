@@ -1,4 +1,3 @@
-import attendanceData from '../data/attendance.json';
 import { AttendanceRecord, MonthlyAttendanceSummary, PunchRecord } from '../types/attendance';
 import { holidayService } from './holidayService';
 import { API_CONFIG } from '../config/apiConfig';
@@ -21,7 +20,7 @@ class AttendanceService {
   private liveTodayRecord: AttendanceRecord | null = null;
 
   constructor() {
-    this.records = [...(attendanceData.records as AttendanceRecord[])];
+    this.records = [];
   }
 
   /**

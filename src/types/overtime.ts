@@ -1,4 +1,5 @@
 import { OvertimeCompensationMethod } from './settings';
+export { OvertimeCompensationMethod };
 
 export type OvertimeStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type ReimbursementStatus = 'PENDING' | 'PROCESSED' | 'NOT_APPLICABLE';

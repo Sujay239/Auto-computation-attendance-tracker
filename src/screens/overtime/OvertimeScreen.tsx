@@ -5,12 +5,14 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAttendance } from '../../context/AttendanceContext';
 import { overtimeService } from '../../services/overtimeService';
+import { OvertimeRecord, OvertimeSummary } from '../../types/overtime';
 import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
@@ -19,20 +21,40 @@ export const OvertimeScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { overtimeSummary, refreshData: refreshAttendance } = useAttendance();
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [records, setRecords] = useState<OvertimeRecord[]>(overtimeService.getRecords());
+  const [summary, setSummary] = useState<OvertimeSummary>(
+    overtimeSummary || overtimeService.getSummary()
+  );
 
-  const summary = overtimeSummary || overtimeService.getSummary();
-  const records = overtimeService.getRecords();
+  const loadOvertime = async () => {
+    try {
+      const res = await overtimeService.fetchRealtimeOvertime();
+      if (res.success && res.data) {
+        if (Array.isArray(res.data.records)) {
+          setRecords(res.data.records);
+        }
+        if (res.data.summary) {
+          setSummary(res.data.summary);
+        }
+      }
+    } catch {
+      // fallback
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await overtimeService.fetchRealtimeOvertime();
+    await loadOvertime();
     await refreshAttendance();
     setRefreshing(false);
   };
 
   useEffect(() => {
-    overtimeService.fetchRealtimeOvertime();
+    loadOvertime();
   }, []);
 
   return (
@@ -53,7 +75,16 @@ export const OvertimeScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Policy Summary Card */}
+        {loading && records.length === 0 ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Loading overtime records & approvals...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Policy Summary Card */}
         <View
           style={{
             backgroundColor: '#EFF6FF',
@@ -201,6 +232,8 @@ export const OvertimeScreen: React.FC = () => {
             </TouchableOpacity>
           ))}
         </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );

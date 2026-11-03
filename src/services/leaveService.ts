@@ -1,4 +1,3 @@
-import leaveData from '../data/leaveRequests.json';
 import { LeaveBalance, LeaveRequest, LeaveType, LeaveDurationType } from '../types/leave';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
@@ -8,8 +7,8 @@ class LeaveService {
   private requests: LeaveRequest[] = [];
 
   constructor() {
-    this.balances = [...(leaveData.balances as LeaveBalance[])];
-    this.requests = [...(leaveData.requests as LeaveRequest[])];
+    this.balances = [];
+    this.requests = [];
   }
 
   getBalances(): LeaveBalance[] {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +12,7 @@ import { EmptyState } from '../../components/common/EmptyState';
 export const AttendanceHistoryScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { records, refreshData } = useAttendance();
+  const { records, refreshData, isLoading } = useAttendance();
 
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -86,7 +86,14 @@ export const AttendanceHistoryScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {filteredRecords.length > 0 ? (
+        {isLoading && records.length === 0 ? (
+          <View className="py-24 items-center justify-center">
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text className="text-xs font-bold text-slate-500 mt-3">
+              Loading attendance history...
+            </Text>
+          </View>
+        ) : filteredRecords.length > 0 ? (
           <View className="space-y-2.5">
             {filteredRecords.map((item) => (
               <TouchableOpacity
