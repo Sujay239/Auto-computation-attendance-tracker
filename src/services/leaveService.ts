@@ -2,12 +2,17 @@ import { LeaveBalance, LeaveRequest, LeaveType, LeaveDurationType } from '../typ
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
 
+export const DEFAULT_LEAVE_BALANCES: LeaveBalance[] = [
+  { type: 'CASUAL', label: 'Casual Leave', total: 12, used: 0, available: 12 },
+  { type: 'SICK', label: 'Sick Leave', total: 5, used: 0, available: 5 },
+];
+
 class LeaveService {
-  private balances: LeaveBalance[] = [];
+  private balances: LeaveBalance[] = [...DEFAULT_LEAVE_BALANCES];
   private requests: LeaveRequest[] = [];
 
   constructor() {
-    this.balances = [];
+    this.balances = [...DEFAULT_LEAVE_BALANCES];
     this.requests = [];
   }
 
@@ -17,7 +22,32 @@ class LeaveService {
 
   updateBalancesFromDashboard(balances: LeaveBalance[]): void {
     if (Array.isArray(balances) && balances.length > 0) {
-      this.balances = [...balances];
+      const filtered = balances
+        .filter((b) => b && (b.type === 'CASUAL' || b.type === 'SICK'))
+        .map((b) => {
+          if (b.type === 'SICK' && b.total > 5) {
+            const used = Math.min(b.used || 0, 5);
+            return {
+              ...b,
+              total: 5,
+              used: used,
+              available: Math.max(0, 5 - used),
+            };
+          }
+          return b;
+        });
+
+      if (filtered.length > 0) {
+        const hasCasual = filtered.some((b) => b.type === 'CASUAL');
+        const hasSick = filtered.some((b) => b.type === 'SICK');
+        if (!hasCasual) {
+          filtered.unshift({ type: 'CASUAL', label: 'Casual Leave', total: 12, used: 0, available: 12 });
+        }
+        if (!hasSick) {
+          filtered.push({ type: 'SICK', label: 'Sick Leave', total: 5, used: 0, available: 5 });
+        }
+        this.balances = filtered;
+      }
     }
   }
 
@@ -72,7 +102,7 @@ class LeaveService {
       const res = await response.json();
       if (res.success) {
         if (Array.isArray(res.balances) && res.balances.length > 0) {
-          this.balances = res.balances;
+          this.updateBalancesFromDashboard(res.balances);
         }
         if (Array.isArray(res.requests)) {
           this.requests = res.requests;

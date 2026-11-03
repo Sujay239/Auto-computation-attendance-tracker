@@ -151,13 +151,31 @@ export function calculateArrivalStatus(
     }
   }
 
-  // 4. Arrived after 10:45 AM -> Half-day case regardless of remaining allowances
+  // 4. Arrived after 2:30 PM (870 min) -> Strictly marked ABSENT (Punch-in is closed)
+  if (checkInMin > 870) {
+    return {
+      status: 'ABSENT',
+      statusLabel: 'Absent (Punch Closed after 2:30 PM)',
+      isLate: true,
+      isHalfDay: false,
+      halfDayReason: `Arrival at ${minutesTo12H(checkInMin)} was after 02:30 PM. Punch-in closed and marked absent.`,
+      expectedCheckOutMinutes: adjustedClosingMin,
+      expectedCheckOutTime12H: minutesTo12H(adjustedClosingMin),
+      expectedCheckOutTime24H: minutesTo24H(adjustedClosingMin),
+      minutesLate: checkInMin - maxLateMin,
+    };
+  }
+
+  // 5. Arrived after 10:45 AM up to 2:30 PM -> Half-day case (First half cutoff: 2:00 PM)
+  const isSecondHalfArrival = checkInMin > 840; // after 2:00 PM
   return {
     status: 'HALF_DAY',
-    statusLabel: 'Half Day (After 10:45 AM Cutoff)',
+    statusLabel: isSecondHalfArrival ? 'Half Day (Second Half Arrival)' : 'Half Day (After 10:45 AM Cutoff)',
     isLate: true,
     isHalfDay: true,
-    halfDayReason: `Arrival at ${minutesTo12H(checkInMin)} was beyond the maximum 10:45 AM cutoff.`,
+    halfDayReason: isSecondHalfArrival
+      ? `Arrival at ${minutesTo12H(checkInMin)} during second half window (2:00 PM – 2:30 PM).`
+      : `Arrival at ${minutesTo12H(checkInMin)} was beyond the maximum 10:45 AM cutoff.`,
     expectedCheckOutMinutes: adjustedClosingMin,
     expectedCheckOutTime12H: minutesTo12H(adjustedClosingMin),
     expectedCheckOutTime24H: minutesTo24H(adjustedClosingMin),

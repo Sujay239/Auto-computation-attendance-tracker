@@ -1,4 +1,4 @@
-export type LeaveType = 'CASUAL' | 'SICK' | 'EARNED' | 'HALF_DAY';
+export type LeaveType = 'CASUAL' | 'SICK';
 export type LeaveDurationType = 'FULL_DAY' | 'FIRST_HALF' | 'SECOND_HALF';
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 

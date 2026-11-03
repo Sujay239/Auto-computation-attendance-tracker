@@ -2,28 +2,154 @@ import { HolidayItem } from '../types/company';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
 
+const DEFAULT_HOLIDAYS: HolidayItem[] = [
+  {
+    id: 'hol-01',
+    name: 'Republic Day',
+    date: '2026-01-26',
+    day: 'Monday',
+    type: 'NATIONAL',
+    description: 'Celebration of the Constitution of India',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-02',
+    name: 'Holi (Festival of Colours)',
+    date: '2026-03-04',
+    day: 'Wednesday',
+    type: 'FESTIVAL',
+    description: 'Spring Festival Celebration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-03',
+    name: 'Good Friday',
+    date: '2026-04-03',
+    day: 'Friday',
+    type: 'PUBLIC',
+    description: 'Christian Holiday',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-04',
+    name: "International Workers' Day",
+    date: '2026-05-01',
+    day: 'Friday',
+    type: 'PUBLIC',
+    description: 'Labour Day Celebration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-05',
+    name: 'Independence Day',
+    date: '2026-08-15',
+    day: 'Saturday',
+    type: 'NATIONAL',
+    description: 'National Independence Commemoration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-06',
+    name: 'Mahatma Gandhi Jayanti',
+    date: '2026-10-02',
+    day: 'Friday',
+    type: 'NATIONAL',
+    description: 'Birth anniversary of the Father of the Nation',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-07',
+    name: 'Maha Navami / Dussehra',
+    date: '2026-10-20',
+    day: 'Tuesday',
+    type: 'FESTIVAL',
+    description: 'Durga Puja & Vijayadashami celebration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-08',
+    name: 'Diwali / Deepavali',
+    date: '2026-11-08',
+    day: 'Sunday',
+    type: 'FESTIVAL',
+    description: 'Festival of Lights & Prosperity',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-09',
+    name: 'Guru Nanak Jayanti',
+    date: '2026-11-24',
+    day: 'Tuesday',
+    type: 'PUBLIC',
+    description: 'Birth anniversary of Guru Nanak Dev Ji',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-10',
+    name: 'Christmas Day',
+    date: '2026-12-25',
+    day: 'Friday',
+    type: 'PUBLIC',
+    description: 'Christmas Celebration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-11',
+    name: "New Year's Day",
+    date: '2027-01-01',
+    day: 'Friday',
+    type: 'PUBLIC',
+    description: 'New Year 2027 Celebration',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-12',
+    name: 'Republic Day 2027',
+    date: '2027-01-26',
+    day: 'Tuesday',
+    type: 'NATIONAL',
+    description: 'National Holiday',
+    isOfficeClosed: true,
+  },
+  {
+    id: 'hol-13',
+    name: 'Holi 2027',
+    date: '2027-03-24',
+    day: 'Wednesday',
+    type: 'FESTIVAL',
+    description: 'Spring Festival of Colours',
+    isOfficeClosed: true,
+  },
+];
+
 class HolidayService {
-  private holidays: HolidayItem[] = [];
+  private holidays: HolidayItem[] = [...DEFAULT_HOLIDAYS];
 
   constructor() {
-    this.holidays = [];
+    this.holidays = [...DEFAULT_HOLIDAYS];
   }
 
   getHolidays(): HolidayItem[] {
-    return [...this.holidays].sort((a, b) => a.date.localeCompare(b.date));
+    return [...this.holidays]
+      .filter((h) => h && h.name)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   }
 
-  getHolidayByDate(dateStr: string): HolidayItem | undefined {
-    return this.holidays.find((h) => h.date === dateStr);
+  getHolidayByDate(dateStr?: string): HolidayItem | undefined {
+    if (!dateStr) return undefined;
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    return this.holidays.find((h) => h && (h.date === cleanDate || (h.date && h.date.startsWith(cleanDate))));
   }
 
-  isHoliday(dateStr: string): boolean {
-    return this.holidays.some((h) => h.date === dateStr);
+  isHoliday(dateStr?: string): boolean {
+    if (!dateStr) return false;
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    return this.holidays.some((h) => h && (h.date === cleanDate || (h.date && h.date.startsWith(cleanDate))));
   }
 
   getUpcomingHolidays(referenceDate?: string): HolidayItem[] {
     const today = referenceDate || new Date().toISOString().split('T')[0];
-    return this.getHolidays().filter((h) => h.date >= today);
+    return this.getHolidays().filter((h) => h && h.date && h.date >= today);
   }
 
   getNextHoliday(referenceDate?: string): {
@@ -35,19 +161,20 @@ class HolidayService {
     const upcoming = this.getUpcomingHolidays(today);
     const next = upcoming[0];
 
-    if (!next) {
+    if (!next || !next.date) {
       return { holiday: undefined, daysRemaining: 0, isToday: false };
     }
 
     const tDate = new Date(today);
-    const hDate = new Date(next.date);
+    const cleanNextDate = next.date.includes('T') ? next.date.split('T')[0] : next.date;
+    const hDate = new Date(cleanNextDate);
     const diffTime = hDate.getTime() - tDate.getTime();
-    const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    const daysRemaining = isNaN(diffTime) ? 0 : Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
     return {
       holiday: next,
       daysRemaining,
-      isToday: next.date === today,
+      isToday: cleanNextDate === today,
     };
   }
 
@@ -96,18 +223,24 @@ class HolidayService {
 
       const res = await response.json();
       if (res.success && Array.isArray(res.holidays) && res.holidays.length > 0) {
-        this.holidays = res.holidays;
+        // Normalize date format on all received holiday objects
+        this.holidays = res.holidays
+          .filter((h: any) => h && h.name && (h.date || h.holiday_date))
+          .map((h: any) => ({
+            ...h,
+            date: String(h.date || h.holiday_date || '').split('T')[0],
+          }));
+
         return {
           success: true,
           holidays: this.getHolidays(),
-          upcomingHolidays: res.upcomingHolidays || this.getUpcomingHolidays(),
-          nextHoliday: res.nextHoliday || this.getNextHoliday(),
+          upcomingHolidays: this.getUpcomingHolidays(),
+          nextHoliday: this.getNextHoliday(),
         };
       }
 
       return {
-        success: false,
-        error: res.error || 'Failed to fetch holidays',
+        success: true,
         holidays: this.getHolidays(),
         upcomingHolidays: this.getUpcomingHolidays(),
         nextHoliday: this.getNextHoliday(),
@@ -124,23 +257,28 @@ class HolidayService {
     }
   }
 
-  getMonthHolidays(monthStr: string): HolidayItem[] {
-    return this.holidays.filter((h) => h.date.startsWith(monthStr));
+  getMonthHolidays(monthStr?: string): HolidayItem[] {
+    if (!monthStr) return [];
+    return this.holidays.filter((h) => h && h.date && h.date.startsWith(monthStr));
   }
 
   /**
    * Determines whether a given calendar date is an official working day for office shifts.
    * Returns false if the day is an official company holiday or a weekend (Sunday).
    */
-  isOfficeWorkingDay(dateStr: string): boolean {
-    // 1. Check if it's an official company holiday
-    if (this.isHoliday(dateStr)) {
+  isOfficeWorkingDay(dateStr?: string): boolean {
+    if (!dateStr) return true;
+    // 1. Check if it's an official closed company holiday
+    const hol = this.getHolidayByDate(dateStr);
+    if (hol && hol.isOfficeClosed !== false) {
       return false;
     }
 
-    // 2. Check if it's Sunday (standard weekly off)
-    const date = new Date(dateStr);
-    const dayOfWeek = date.getDay(); // 0 is Sunday
+    // 2. Check if it's Sunday (weekly off) - Mon-Sat are office working days (6 days out of 7)
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const [yStr, mStr, dStr] = cleanDate.split('-');
+    if (!yStr || !mStr || !dStr) return true;
+    const dayOfWeek = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1, parseInt(dStr, 10)).getDay();
     if (dayOfWeek === 0) {
       return false;
     }
@@ -150,16 +288,17 @@ class HolidayService {
 
   /**
    * Calculates the exact number of valid office working days in a given month (YYYY-MM),
-   * rigorously excluding Sundays and all official company holidays so system metrics
-   * do not penalize employees on non-working days.
+   * rigorously excluding Sundays and closed company holidays.
+   * Mon - Sat are valid working days (6 days out of 7 of a week).
    */
-  getValidOfficeDaysInMonth(monthStr: string): {
+  getValidOfficeDaysInMonth(monthStr?: string): {
     totalDays: number;
     sundaysCount: number;
     holidaysCount: number;
     validWorkingDays: number;
   } {
-    const [yearStr, mStr] = monthStr.split('-');
+    const targetMonth = monthStr && monthStr.includes('-') ? monthStr : new Date().toISOString().substring(0, 7);
+    const [yearStr, mStr] = targetMonth.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(mStr, 10);
 
@@ -170,10 +309,11 @@ class HolidayService {
 
     for (let day = 1; day <= totalDays; day++) {
       const dateStr = `${yearStr}-${mStr.padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-      const isSun = new Date(dateStr).getDay() === 0;
-      const isHol = this.isHoliday(dateStr);
+      const isSun = new Date(year, month - 1, day).getDay() === 0;
+      const hol = this.getHolidayByDate(dateStr);
+      const isClosedHol = !!(hol && hol.isOfficeClosed !== false);
 
-      if (isHol) {
+      if (isClosedHol) {
         holidaysCount++;
       } else if (isSun) {
         sundaysCount++;
@@ -192,4 +332,3 @@ class HolidayService {
 }
 
 export const holidayService = new HolidayService();
-

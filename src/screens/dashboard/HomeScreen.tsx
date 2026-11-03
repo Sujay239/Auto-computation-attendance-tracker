@@ -47,6 +47,9 @@ export const HomeScreen: React.FC = () => {
   const [isPunchingOut, setIsPunchingOut] = useState(false);
 
   const displayHoliday = upcomingHoliday || null;
+  const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const isPast230PM = currentMinutes >= 870;
+  const isAbsentCase = todayRecord?.status === 'ABSENT' || (!isCheckedIn && !isCheckedOut && isPast230PM);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -57,6 +60,10 @@ export const HomeScreen: React.FC = () => {
   const handlePunchToggle = async () => {
     setPunchFeedback(null);
     if (!isCheckedIn) {
+      if (isPast230PM) {
+        setPunchFeedback('Punch-in closed after 2:30 PM. You have been directly marked as Absent for today.');
+        return;
+      }
       const res = await punchIn();
       if (res.success && res.record) {
         setPunchFeedback(`Punched in at ${res.record.checkIn} (${res.record.statusLabel})`);
@@ -206,6 +213,8 @@ export const HomeScreen: React.FC = () => {
                     ? 'bg-emerald-500 ring-4 ring-emerald-100'
                     : isCheckedOut
                     ? 'bg-blue-500'
+                    : isAbsentCase
+                    ? 'bg-rose-500 ring-4 ring-rose-100'
                     : 'bg-amber-500'
                 }`}
               />
@@ -214,12 +223,14 @@ export const HomeScreen: React.FC = () => {
                   ? 'Shift Completed'
                   : isCheckedIn
                   ? 'Currently Checked In'
+                  : isAbsentCase
+                  ? 'Marked Absent (Punch Closed)'
                   : 'Not Checked In'}
               </Text>
             </View>
 
             <Badge
-              label={todayRecord?.statusLabel || 'Awaiting Punch'}
+              label={todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed 2:30 PM)' : 'Awaiting Punch')}
               variant={
                 todayRecord?.status === 'ON_TIME'
                   ? 'success'
@@ -227,7 +238,7 @@ export const HomeScreen: React.FC = () => {
                   ? 'warning'
                   : todayRecord?.status === 'LATE'
                   ? 'warning'
-                  : todayRecord?.status === 'HALF_DAY'
+                  : (todayRecord?.status === 'HALF_DAY' || isAbsentCase)
                   ? 'danger'
                   : 'neutral'
               }
@@ -287,7 +298,22 @@ export const HomeScreen: React.FC = () => {
           </View>
 
           {/* Punch Action Button */}
-          {!isCheckedOut ? (
+          {isAbsentCase && !isCheckedIn ? (
+            <View className="bg-rose-50 p-3.5 rounded-2xl flex-row items-center justify-between border border-rose-200">
+              <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                <Ionicons name="close-circle" size={22} color="#DC2626" />
+                <View className="flex-1">
+                  <Text className="text-xs font-bold text-rose-900">
+                    Punch-in Closed (Marked Absent)
+                  </Text>
+                  <Text className="text-[11px] text-rose-700 mt-0.5 leading-tight">
+                    Cutoff was 02:30 PM. No check-ins permitted after cutoff.
+                  </Text>
+                </View>
+              </View>
+              <Badge label="ABSENT" variant="danger" size="sm" />
+            </View>
+          ) : !isCheckedOut ? (
             <Button
               label={isCheckedIn ? 'Punch Out' : 'Punch In Now'}
               size="lg"
@@ -430,7 +456,7 @@ export const HomeScreen: React.FC = () => {
               <Ionicons name="checkmark-circle-outline" size={15} color="#059669" />
             </View>
             <Text className="text-2xl font-black text-slate-900">
-              {summary.presentDays + (isCheckedIn ? 1 : 0)}
+              {Math.max(summary.presentDays, isCheckedIn ? 1 : 0)}
             </Text>
             <Text className="text-[10px] text-slate-400">of {summary.totalWorkingDays} working days</Text>
           </Card>

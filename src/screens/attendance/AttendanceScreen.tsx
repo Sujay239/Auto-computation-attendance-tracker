@@ -28,6 +28,9 @@ export const AttendanceScreen: React.FC = () => {
   const [punchMessage, setPunchMessage] = useState<string | null>(null);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
+  const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const isPast230PM = currentMinutes >= 870;
+  const isAbsentCase = todayRecord?.status === 'ABSENT' || (!isCheckedIn && !isCheckedOut && isPast230PM);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -38,6 +41,10 @@ export const AttendanceScreen: React.FC = () => {
   const handlePunch = async () => {
     setPunchMessage(null);
     if (!isCheckedIn) {
+      if (isPast230PM) {
+        setPunchMessage('Punch-in closed after 2:30 PM. You have been directly marked as Absent for today.');
+        return;
+      }
       const res = await punchIn();
       if (res.success && res.record) {
         setPunchMessage(`Checked in at ${res.record.checkIn} - ${res.record.statusLabel}`);
@@ -68,18 +75,16 @@ export const AttendanceScreen: React.FC = () => {
     const dateStr = `2026-11-${dayNum.toString().padStart(2, '0')}`;
     const record = records.find((r) => r.date === dateStr);
     const holiday = holidayService.getHolidayByDate(dateStr);
-    const dayOfWeek = (dayNum + 6) % 7; // demo offset (Nov 1 2026 was Sunday)
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const dayOfWeek = new Date(2026, 10, dayNum).getDay();
+    const isWeekend = dayOfWeek === 0; // Mon-Sat are 6 working days; Sunday (0) is weekly off
 
     let statusType = 'UPCOMING';
-    if (holiday) {
+    if (holiday && holiday.isOfficeClosed !== false) {
       statusType = 'HOLIDAY';
     } else if (record) {
       statusType = record.status;
     } else if (isWeekend) {
       statusType = 'WEEKEND';
-    } else if (dayNum <= 2) {
-      statusType = 'PRESENT';
     }
 
     return { dayNum, dateStr, record, isWeekend, holiday, statusType };
@@ -144,12 +149,14 @@ export const AttendanceScreen: React.FC = () => {
                   ? 'Completed for Today'
                   : isCheckedIn
                   ? 'Active Shift'
+                  : isAbsentCase
+                  ? 'Marked Absent (Punch Closed)'
                   : 'Ready to Punch In'}
               </Text>
             </View>
 
             <Badge
-              label={todayRecord?.statusLabel || 'Not Punched'}
+              label={todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed 2:30 PM)' : 'Not Punched')}
               variant={
                 todayRecord?.status === 'ON_TIME'
                   ? 'success'
@@ -157,7 +164,7 @@ export const AttendanceScreen: React.FC = () => {
                   ? 'warning'
                   : todayRecord?.status === 'LATE'
                   ? 'warning'
-                  : todayRecord?.status === 'HALF_DAY'
+                  : (todayRecord?.status === 'HALF_DAY' || isAbsentCase)
                   ? 'danger'
                   : 'neutral'
               }
@@ -228,7 +235,22 @@ export const AttendanceScreen: React.FC = () => {
           </View>
 
           {/* Action Button */}
-          {!isCheckedOut ? (
+          {isAbsentCase && !isCheckedIn ? (
+            <View className="bg-rose-50 p-3.5 rounded-2xl flex-row items-center justify-between border border-rose-200">
+              <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                <Ionicons name="close-circle" size={22} color="#DC2626" />
+                <View className="flex-1">
+                  <Text className="text-xs font-bold text-rose-900">
+                    Punch-in Closed (Marked Absent)
+                  </Text>
+                  <Text className="text-[11px] text-rose-700 mt-0.5 leading-tight">
+                    Cutoff was 02:30 PM. No check-ins permitted after cutoff.
+                  </Text>
+                </View>
+              </View>
+              <Badge label="ABSENT" variant="danger" size="sm" />
+            </View>
+          ) : !isCheckedOut ? (
             <Button
               label={isCheckedIn ? 'Punch Out & End Shift' : 'Punch In (Office Gate)'}
               size="lg"

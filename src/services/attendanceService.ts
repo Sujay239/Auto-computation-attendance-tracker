@@ -279,6 +279,7 @@ class AttendanceService {
       return {
         success: false,
         error: resJson?.error || `Punch failed (${response.status})`,
+        record: resJson?.record,
       };
     } catch (err: any) {
       clearTimeout(timeoutId);
@@ -322,6 +323,37 @@ class AttendanceService {
     const monthlyLateUsed = this.getMonthlyLateCount(currentMonth);
 
     const arrival = calculateArrivalStatus(timeStr, monthlyLateUsed);
+
+    if (arrival.status === 'ABSENT') {
+      const absentRecord: AttendanceRecord = {
+        id: existing ? existing.id : `att-${todayStr}`,
+        employeeId,
+        date: todayStr,
+        checkIn: undefined,
+        checkOut: undefined,
+        status: 'ABSENT',
+        statusLabel: arrival.statusLabel,
+        totalDurationMinutes: 0,
+        workDurationMinutes: 0,
+        lunchDurationMinutes: 0,
+        expectedCheckOutTime: '19:00',
+        punches: [],
+        notes: arrival.halfDayReason || 'Punch-in closed after 2:30 PM. Directly marked as absent.',
+      };
+      if (existing) {
+        const idx = this.records.findIndex((r) => r.id === existing.id);
+        this.records[idx] = absentRecord;
+      } else {
+        this.records.unshift(absentRecord);
+      }
+      this.liveTodayRecord = absentRecord;
+      this.liveSummary = null;
+      return {
+        success: false,
+        record: absentRecord,
+        error: 'Punch-in is closed after 02:30 PM. You have been directly marked as Absent for today.',
+      };
+    }
 
     const punch: PunchRecord = {
       id: `p-${Date.now()}`,

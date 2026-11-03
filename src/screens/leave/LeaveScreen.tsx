@@ -51,7 +51,23 @@ export const LeaveScreen: React.FC = () => {
     loadLeaves();
   }, []);
 
-  const balances = liveBalances.length > 0 ? liveBalances : (leaveBalances.length > 0 ? leaveBalances : leaveService.getBalances());
+  const rawBalances = liveBalances.length > 0 ? liveBalances : (leaveBalances.length > 0 ? leaveBalances : leaveService.getBalances());
+  const balances = rawBalances
+    .filter((b) => b && (b.type === 'CASUAL' || b.type === 'SICK'))
+    .map((b) => {
+      if (b.type === 'SICK' && b.total > 5) {
+        const used = Math.min(b.used || 0, 5);
+        return { ...b, total: 5, used, available: Math.max(0, 5 - used) };
+      }
+      return b;
+    });
+
+  if (!balances.some((b) => b.type === 'CASUAL')) {
+    balances.unshift({ type: 'CASUAL', label: 'Casual Leave', total: 12, used: 0, available: 12 });
+  }
+  if (!balances.some((b) => b.type === 'SICK')) {
+    balances.push({ type: 'SICK', label: 'Sick Leave', total: 5, used: 0, available: 5 });
+  }
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -136,7 +152,10 @@ export const LeaveScreen: React.FC = () => {
               • Work From Home (WFH) is strictly not permitted.
             </Text>
             <Text className="text-[11px] text-slate-600 font-medium">
-              • Half-day leave is subject to half-day salary deduction or leave adjustment.
+              • Annual Quota: 12 Casual Leaves & 5 Sick Leaves (Total 17 days/year).
+            </Text>
+            <Text className="text-[11px] text-slate-600 font-medium">
+              • Half-day leave is counted as 0.5 day against Casual or Sick Leave.
             </Text>
             <Text className="text-[11px] text-slate-600 font-medium">
               • Leaves beyond entitlement are subject to salary deduction.

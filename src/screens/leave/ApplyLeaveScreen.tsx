@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useAttendance } from '../../context/AttendanceContext';
 import { leaveService } from '../../services/leaveService';
 import { LeaveType, LeaveDurationType } from '../../types/leave';
 import { Header } from '../../components/common/Header';
@@ -22,6 +23,9 @@ export const ApplyLeaveScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { leaveBalances } = useAttendance();
+  const casualBal = leaveBalances.find((b) => b.type === 'CASUAL')?.available ?? 12;
+  const sickBal = leaveBalances.find((b) => b.type === 'SICK')?.available ?? 5;
 
   const todayStr = new Date().toISOString().split('T')[0];
   const [leaveType, setLeaveType] = useState<LeaveType>('CASUAL');
@@ -138,7 +142,11 @@ export const ApplyLeaveScreen: React.FC = () => {
           </Text>
 
           <View className="flex-row gap-2.5 mb-4">
-            {(['CASUAL', 'SICK', 'EARNED'] as LeaveType[]).map((type) => {
+            {[
+              { type: 'CASUAL' as LeaveType, label: 'Casual Leave', quota: '12d Annual', available: casualBal },
+              { type: 'SICK' as LeaveType, label: 'Sick Leave', quota: '5d Annual', available: sickBal },
+            ].map((typeItem) => {
+              const type = typeItem.type;
               const isSelected = leaveType === type;
               return (
                 <TouchableOpacity
@@ -155,7 +163,13 @@ export const ApplyLeaveScreen: React.FC = () => {
                     style={{ color: isSelected ? '#FFFFFF' : '#334155' }}
                     className="text-xs font-bold"
                   >
-                    {type}
+                    {typeItem.label}
+                  </Text>
+                  <Text
+                    style={{ color: isSelected ? '#DBEAFE' : '#64748B' }}
+                    className="text-[10px] mt-0.5 font-medium"
+                  >
+                    {typeItem.available} Left • {typeItem.quota}
                   </Text>
                 </TouchableOpacity>
               );
@@ -234,8 +248,8 @@ export const ApplyLeaveScreen: React.FC = () => {
                     </Text>
                     <Text className="text-[11px] text-purple-700 mt-0.5">
                       {durationType === 'FIRST_HALF'
-                        ? '10:00 AM – 02:30 PM (Counted as 0.5 Day Leave)'
-                        : '02:30 PM – 07:00 PM (Counted as 0.5 Day Leave)'}
+                        ? '10:00 AM – 02:00 PM (Counted as 0.5 Day Leave)'
+                        : '02:00 PM – 07:00 PM (Counted as 0.5 Day Leave)'}
                     </Text>
                   </View>
                 </View>

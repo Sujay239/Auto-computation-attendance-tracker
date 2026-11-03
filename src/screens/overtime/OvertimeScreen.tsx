@@ -133,27 +133,7 @@ export const OvertimeScreen: React.FC = () => {
           </Card>
         </View>
 
-        {/* Reimbursement Alert Card */}
-        <View
-          style={{
-            backgroundColor: '#ECFDF5',
-            borderColor: '#A7F3D0',
-            borderWidth: 1,
-            borderRadius: 16,
-            padding: 14,
-          }}
-          className="mb-4 flex-row items-center justify-between"
-        >
-          <View className="flex-1 mr-3">
-            <Text className="text-xs font-bold text-emerald-950">
-              Pending Monetary Reimbursement
-            </Text>
-            <Text className="text-[11px] text-emerald-800 mt-0.5">
-              1 approved record (₹1,450) scheduled for payout within 7-day policy deadline (Nov 06).
-            </Text>
-          </View>
-          <Badge label="7 Days Rule" variant="success" size="sm" />
-        </View>
+       
 
         {/* Overtime Records List */}
         <Text className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5 px-1">

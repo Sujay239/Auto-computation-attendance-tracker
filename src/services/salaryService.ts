@@ -78,7 +78,7 @@ class SalaryService {
    */
   computeLocalBreakdown(monthKey: string): SalaryBreakdown {
     const employee = authService.getCurrentEmployee();
-    const rawSalary = Number(employee?.salary) || 45000;
+    const rawSalary = Number(employee?.salary);
 
     const [yearStr, monthStr] = monthKey.split('-');
     const year = parseInt(yearStr, 10) || new Date().getFullYear();
@@ -107,18 +107,14 @@ class SalaryService {
 
     // Get current available leave balances
     const leaveBalances = leaveService.getBalances();
-    const halfDayBalance = leaveBalances.find((b) => b.type === 'HALF_DAY');
     const casualBalance = leaveBalances.find((b) => b.type === 'CASUAL');
     const sickBalance = leaveBalances.find((b) => b.type === 'SICK');
-    const earnedBalance = leaveBalances.find((b) => b.type === 'EARNED');
 
-    let availableHalfDay = halfDayBalance ? halfDayBalance.available : 6.0;
     let availableCasual = casualBalance ? casualBalance.available : 12.0;
-    let availableSick = sickBalance ? sickBalance.available : 12.0;
-    let availableEarned = earnedBalance ? earnedBalance.available : 15.0;
+    let availableSick = sickBalance ? Math.min(sickBalance.available, 5.0) : 5.0;
 
-    let initialHalfDay = availableHalfDay;
     let initialCasual = availableCasual;
+    let initialSick = availableSick;
 
     const incidents: SalaryDeductionIncident[] = [];
     let halfDaysAdjustedCount = 0;
@@ -136,13 +132,6 @@ class SalaryService {
 
     const adjustedLeaveBalances: AdjustedLeaveBalance[] = [
       {
-        type: 'HALF_DAY',
-        label: 'Half-Day Leave',
-        initialAvailable: initialHalfDay,
-        usedForSalaryAdjustment: initialHalfDay - availableHalfDay,
-        currentAvailable: availableHalfDay,
-      },
-      {
         type: 'CASUAL',
         label: 'Casual Leave',
         initialAvailable: initialCasual,
@@ -152,16 +141,9 @@ class SalaryService {
       {
         type: 'SICK',
         label: 'Sick Leave',
-        initialAvailable: availableSick,
+        initialAvailable: initialSick,
         usedForSalaryAdjustment: 0,
         currentAvailable: availableSick,
-      },
-      {
-        type: 'EARNED',
-        label: 'Earned Leave',
-        initialAvailable: availableEarned,
-        usedForSalaryAdjustment: 0,
-        currentAvailable: availableEarned,
       },
     ];
 

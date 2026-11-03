@@ -65,7 +65,18 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const res = await attendanceService.fetchRealtimeDashboard(user.id);
         if (res.success && res.data) {
           if (res.data.leaves && Array.isArray(res.data.leaves.balances)) {
-            setLeaveBalances(res.data.leaves.balances);
+            const filtered = res.data.leaves.balances
+              .filter((b: any) => b && (b.type === 'CASUAL' || b.type === 'SICK'))
+              .map((b: any) => {
+                if (b.type === 'SICK' && b.total > 5) {
+                  const used = Math.min(b.used || 0, 5);
+                  return { ...b, total: 5, used, available: Math.max(0, 5 - used) };
+                }
+                return b;
+              });
+            if (filtered.length > 0) {
+              setLeaveBalances(filtered);
+            }
           }
           if (res.data.overtime) {
             setOvertimeSummary(res.data.overtime);

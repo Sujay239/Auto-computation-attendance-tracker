@@ -17,6 +17,8 @@ export const OFFICE_TIMINGS = {
   openingTime: '10:00', // 10:00 AM
   openingBufferMinutes: 20, // Grace arrival window until 10:20 AM
   maxLateArrivalTime: '10:45', // Arrival after 10:45 AM strictly marks Half Day
+  halfDayCutoffTime: '14:00', // 02:00 PM (First half ends at 2:00 PM; Second half begins at 2:00 PM)
+  lastPunchInTime: '14:30', // 02:30 PM (Strict punch-in cutoff. Punch-in closed after 2:30 PM, directly marked ABSENT)
   closingTime: '19:00', // 07:00 PM (Standard closing)
   closingBufferMinutes: 30, // Closing extension window until 07:30 PM
   lunchDurationMinutes: 60, // 1 hour standard lunch break
@@ -43,6 +45,8 @@ export const APP_SETTINGS = {
   },
   latePolicy: {
     maximumLateArrivalTime: '10:45',
+    halfDayTime: '14:00',
+    lastPunchInTime: '14:30',
     monthlyAllowance: 3,
     resetFrequency: 'monthly',
   },

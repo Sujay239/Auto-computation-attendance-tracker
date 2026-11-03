@@ -177,7 +177,6 @@ export const ProfileScreen: React.FC = () => {
 
           <View className="flex-row gap-2 mt-3.5">
             <Badge label="Full-Time Active" variant="success" size="sm" />
-            <Badge label="Salt Lake Sector V" variant="neutral" size="sm" />
           </View>
         </Card>
 
