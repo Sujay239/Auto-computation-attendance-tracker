@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,14 +18,35 @@ export const HolidaysScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [filterType, setFilterType] = useState<'ALL' | 'UPCOMING' | 'NATIONAL' | 'FESTIVAL'>('ALL');
   const [refreshing, setRefreshing] = useState(false);
+  const [allHolidays, setAllHolidays] = useState<HolidayItem[]>(holidayService.getHolidays());
+  const [upcomingHolidays, setUpcomingHolidays] = useState<HolidayItem[]>(holidayService.getUpcomingHolidays());
+  const [nextHolidayInfo, setNextHolidayInfo] = useState(holidayService.getNextHoliday());
 
-  const allHolidays = holidayService.getHolidays();
-  const upcomingHolidays = holidayService.getUpcomingHolidays();
-  const nextHolidayInfo = holidayService.getNextHoliday();
+  const loadHolidays = async () => {
+    try {
+      const res = await holidayService.fetchRealtimeHolidays();
+      if (res.holidays) {
+        setAllHolidays(res.holidays);
+      }
+      if (res.upcomingHolidays) {
+        setUpcomingHolidays(res.upcomingHolidays);
+      }
+      if (res.nextHoliday) {
+        setNextHolidayInfo(res.nextHoliday);
+      }
+    } catch {
+      // keep existing
+    }
+  };
 
-  const handleRefresh = () => {
+  useEffect(() => {
+    loadHolidays();
+  }, []);
+
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 300);
+    await loadHolidays();
+    setRefreshing(false);
   };
 
   const filteredHolidays = allHolidays.filter((h) => {

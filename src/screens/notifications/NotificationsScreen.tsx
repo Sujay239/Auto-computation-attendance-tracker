@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,22 +23,37 @@ export const NotificationsScreen: React.FC = () => {
   );
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    setNotifications([...notificationService.getNotifications()]);
-    setTimeout(() => setRefreshing(false), 200);
+  const loadNotifications = async () => {
+    try {
+      const res = await notificationService.fetchRealtimeNotifications();
+      if (res.notifications) {
+        setNotifications([...res.notifications]);
+      }
+    } catch {
+      // keep existing
+    }
   };
 
-  const handleMarkAsRead = (id: string, actionRoute?: string) => {
-    notificationService.markAsRead(id);
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadNotifications();
+    setRefreshing(false);
+  };
+
+  const handleMarkAsRead = async (id: string, actionRoute?: string) => {
+    await notificationService.markAsReadOnline(id);
     setNotifications([...notificationService.getNotifications()]);
     if (actionRoute) {
       router.push(actionRoute as any);
     }
   };
 
-  const handleMarkAllRead = () => {
-    notificationService.markAllAsRead();
+  const handleMarkAllRead = async () => {
+    await notificationService.markAllAsReadOnline();
     setNotifications([...notificationService.getNotifications()]);
   };
 

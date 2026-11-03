@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,9 +12,16 @@ import { EmptyState } from '../../components/common/EmptyState';
 export const AttendanceHistoryScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { records } = useAttendance();
+  const { records, refreshData } = useAttendance();
 
+  const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  };
 
   const filteredRecords = records.filter((r) => {
     if (statusFilter === 'ALL') return true;
@@ -77,6 +84,7 @@ export const AttendanceHistoryScreen: React.FC = () => {
           paddingBottom: 24,
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         {filteredRecords.length > 0 ? (
           <View className="space-y-2.5">

@@ -1,0 +1,230 @@
+{
+  "name": "Auto Computation - Auth Login",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "auth-login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "18f7a620-d6e2-4f3b-b26a-9a91081a2f1b",
+      "name": "Webhook - POST /auth-login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "auth-login-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  e.id,\n  e.first_name,\n  e.last_name,\n  e.email,\n  e.phone,\n  e.avatar_url,\n  e.designation,\n  e.joining_date,\n  e.employment_type,\n  e.work_location,\n  e.role,\n  e.is_active,\n  (CASE WHEN e.id IS NOT NULL THEN true ELSE false END) AS is_authenticated\nFROM (SELECT 1) dummy\nLEFT JOIN employees e \n  ON (LOWER(e.email) = LOWER('{{ ($json.body.identifier || $json.body.employeeIdOrEmail || \"\").trim() }}') \n      OR e.id = '{{ ($json.body.identifier || $json.body.employeeIdOrEmail || \"\").trim() }}')\n AND (\n   e.password_hash = crypt('{{ ($json.body.password || \"\").trim().replace(/'/g, \"''\") }}', e.password_hash)\n   OR e.password_hash = '{{ ($json.body.password || \"\").trim().replace(/'/g, \"''\") }}'\n )\n AND e.is_active = TRUE\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "5b23d91c-7f2e-4b6e-a34f-0112fa5b7c89",
+      "name": "Postgres - Authenticate via pgcrypto crypt()",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        300
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_authenticated }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "97e6f21a-4c8d-4e9b-8712-421bf819de43",
+      "name": "If - Authenticated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify({\n  sub: $('Postgres - Authenticate via pgcrypto crypt()').first().json.id,\n  email: $('Postgres - Authenticate via pgcrypto crypt()').first().json.email,\n  role: $('Postgres - Authenticate via pgcrypto crypt()').first().json.role || 'EMPLOYEE',\n  name: $('Postgres - Authenticate via pgcrypto crypt()').first().json.first_name + ' ' + $('Postgres - Authenticate via pgcrypto crypt()').first().json.last_name,\n  iat: Math.floor(Date.now() / 1000)\n}) }}",
+        "options": {
+          "expiresIn": "30d"
+        }
+      },
+      "id": "323fbdcb-1c26-40ee-9e7e-904e8f94da4e",
+      "name": "JWT - Sign Token",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        920,
+        200
+      ],
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const jwtData = $input.first().json || {};\nconst token = jwtData.token || '';\n\nconst empRow = $('Postgres - Authenticate via pgcrypto crypt()').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    token: token,\n    role: empRow.role || 'EMPLOYEE',\n    employee: {\n      id: empRow.id,\n      firstName: empRow.first_name,\n      lastName: empRow.last_name,\n      email: empRow.email,\n      phone: empRow.phone,\n      avatarUrl: empRow.avatar_url || null,\n      designation: empRow.designation,\n      joiningDate: typeof empRow.joining_date === 'string' ? empRow.joining_date.split('T')[0] : empRow.joining_date,\n      employmentType: empRow.employment_type || 'Full-time',\n      workLocation: empRow.work_location || 'Chinar Park, Teghoria, Kolkata (In-Office)',\n      role: empRow.role || 'EMPLOYEE'\n    }\n  }\n}];"
+      },
+      "id": "f8a91bc4-2391-4e78-9b62-18da3a97e6f1",
+      "name": "Code - Format Login Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1b2c3d4-e5f6-4789-a012-3456789abcde",
+      "name": "Respond 200 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: 401,\n  error: \"Invalid Employee ID/Email or Password. Please check your credentials.\"\n}) }}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b2c3d4e5-f6a7-4890-b123-456789abcdef",
+      "name": "Respond 401 - Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        920,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /auth-login": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Authenticate via pgcrypto crypt()",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Authenticate via pgcrypto crypt()": {
+      "main": [
+        [
+          {
+            "node": "If - Authenticated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Authenticated?": {
+      "main": [
+        [
+          {
+            "node": "JWT - Sign Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401 - Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT - Sign Token": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Login Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Login Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Authentication"
+    }
+  ]
+}

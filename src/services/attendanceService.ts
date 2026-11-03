@@ -1,6 +1,11 @@
 import attendanceData from '../data/attendance.json';
 import { AttendanceRecord, MonthlyAttendanceSummary, PunchRecord } from '../types/attendance';
 import { holidayService } from './holidayService';
+import { API_CONFIG } from '../config/apiConfig';
+import { authService } from './authService';
+import { leaveService } from './leaveService';
+import { overtimeService } from './overtimeService';
+import { notificationService } from './notificationService';
 import {
   calculateArrivalStatus,
   calculateWorkingHours,
@@ -12,9 +17,277 @@ import {
 
 class AttendanceService {
   private records: AttendanceRecord[] = [];
+  private liveSummary: MonthlyAttendanceSummary | null = null;
+  private liveTodayRecord: AttendanceRecord | null = null;
 
   constructor() {
     this.records = [...(attendanceData.records as AttendanceRecord[])];
+  }
+
+  /**
+   * Fetch real-time dashboard data from n8n backend using JWT Bearer token
+   */
+  async fetchRealtimeDashboard(employeeId?: string): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+  }> {
+    const token = authService.getToken();
+    if (!token) {
+      return { success: false, error: 'Unauthorized: No active JWT token found.' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DASHBOARD_EMPLOYEE}`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify({ employeeId }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const resJson = await response.json().catch(() => null);
+
+      if (response.ok && resJson && resJson.success) {
+        // Cache live data for immediate screen rendering
+        if (resJson.todayAttendance) {
+          const t = resJson.todayAttendance;
+          this.liveTodayRecord = {
+            id: t.id || `att-${t.date}`,
+            employeeId: resJson.employee?.id || employeeId || '',
+            date: t.date,
+            checkIn: t.checkIn || undefined,
+            checkOut: t.checkOut || undefined,
+            status: t.status || 'PENDING',
+            statusLabel: t.statusLabel || (t.checkIn ? 'Checked In' : 'Awaiting Punch'),
+            expectedCheckOutTime: t.expectedCheckOutTime,
+            workDurationMinutes: t.workDurationMinutes || 0,
+            totalDurationMinutes: t.totalDurationMinutes || 0,
+            lunchDurationMinutes: t.lunchDurationMinutes || 60,
+            lateAllowanceUsed: t.lateAllowanceUsed,
+            isHalfDayCase: t.isHalfDayCase,
+            punches: [],
+            notes: t.notes,
+          };
+
+          const existingIdx = this.records.findIndex((r) => r.date === t.date);
+          if (existingIdx >= 0) {
+            this.records[existingIdx] = this.liveTodayRecord;
+          } else {
+            this.records.unshift(this.liveTodayRecord);
+          }
+        }
+
+        if (resJson.monthlySummary) {
+          const m = resJson.monthlySummary;
+          this.liveSummary = {
+            month: m.monthKey,
+            totalWorkingDays: m.totalWorkingDays,
+            presentDays: m.presentDays,
+            onTimeDays: m.onTimeDays,
+            withinBufferDays: m.withinBufferDays,
+            lateDays: m.lateDays,
+            lateAllowancesUsed: m.lateAllowancesUsed,
+            lateAllowancesRemaining: m.lateAllowancesRemaining,
+            halfDays: m.halfDays,
+            absentDays: m.absentDays,
+            leaveDays: m.leaveDays,
+            holidays: m.holidays || 0,
+            totalWorkHours: m.totalWorkHours,
+            averageHoursPerDay: m.averageHoursPerDay,
+          };
+        }
+
+        if (resJson.leaves && Array.isArray(resJson.leaves.balances)) {
+          leaveService.updateBalancesFromDashboard(resJson.leaves.balances);
+        }
+
+        if (resJson.overtime) {
+          overtimeService.updateSummaryFromDashboard(resJson.overtime);
+        }
+
+        if (typeof resJson.unreadNotificationsCount === 'number') {
+          notificationService.setUnreadCount(resJson.unreadNotificationsCount);
+        }
+
+        return { success: true, data: resJson };
+      }
+
+      return {
+        success: false,
+        error: resJson?.error || `Server returned error (${response.status})`,
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error: err.name === 'AbortError' ? 'Dashboard request timed out.' : 'Failed to reach n8n dashboard endpoint.',
+      };
+    }
+  }
+
+  /**
+   * Fetch full monthly attendance data, daily records, punches, and holidays from n8n backend
+   */
+  async fetchFullAttendanceData(month?: string, employeeId?: string): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+  }> {
+    const token = authService.getToken();
+    if (!token) {
+      return { success: false, error: 'Unauthorized: No active JWT token found.' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ATTENDANCE_FULL}`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify({ month, employeeId }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const resJson = await response.json().catch(() => null);
+
+      if (response.ok && resJson && resJson.success) {
+        if (Array.isArray(resJson.records)) {
+          this.records = resJson.records;
+        }
+
+        if (resJson.todayRecord) {
+          const t = resJson.todayRecord;
+          this.liveTodayRecord = {
+            id: t.id || `att-${t.date}`,
+            employeeId: resJson.employee?.id || employeeId || '',
+            date: t.date,
+            checkIn: t.checkIn || undefined,
+            checkOut: t.checkOut || undefined,
+            status: t.status || 'PENDING',
+            statusLabel: t.statusLabel || (t.checkIn ? 'Checked In' : 'Awaiting Punch'),
+            expectedCheckOutTime: t.expectedCheckOutTime,
+            workDurationMinutes: t.workDurationMinutes || 0,
+            totalDurationMinutes: t.totalDurationMinutes || 0,
+            lunchDurationMinutes: t.lunchDurationMinutes || 60,
+            lateAllowanceUsed: t.lateAllowanceUsed,
+            isHalfDayCase: t.isHalfDayCase,
+            punches: Array.isArray(t.punches) ? t.punches : [],
+            notes: t.notes,
+          };
+        }
+
+        if (resJson.summary) {
+          const m = resJson.summary;
+          this.liveSummary = {
+            month: m.monthKey,
+            totalWorkingDays: m.totalWorkingDays,
+            presentDays: m.presentDays,
+            onTimeDays: m.onTimeDays,
+            withinBufferDays: m.withinBufferDays,
+            lateDays: m.lateDays,
+            lateAllowancesUsed: m.lateAllowancesUsed,
+            lateAllowancesRemaining: m.lateAllowancesRemaining,
+            halfDays: m.halfDays,
+            absentDays: m.absentDays,
+            leaveDays: m.leaveDays,
+            holidays: m.holidays || 0,
+            totalWorkHours: m.totalWorkHours,
+            averageHoursPerDay: m.averageHoursPerDay,
+          };
+        }
+
+        return { success: true, data: resJson };
+      }
+
+      return {
+        success: false,
+        error: resJson?.error || `Attendance service error (${response.status})`,
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error: err.name === 'AbortError' ? 'Attendance request timed out.' : 'Failed to reach attendance endpoint.',
+      };
+    }
+  }
+
+  /**
+   * Submit real-time punch (IN or OUT) to n8n backend using JWT authentication
+   */
+  async punch(params: {
+    type: 'IN' | 'OUT';
+    customTime?: string;
+    location?: string;
+    notes?: string;
+  }): Promise<{ success: boolean; record?: AttendanceRecord; error?: string }> {
+    const token = authService.getToken();
+    if (!token) {
+      return { success: false, error: 'Unauthorized: Authentication token required.' };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PUNCH}`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const resJson = await response.json().catch(() => null);
+
+      if (response.ok && resJson && resJson.success && resJson.record) {
+        const r = resJson.record;
+        const newRecord: AttendanceRecord = {
+          id: r.id,
+          employeeId: r.employeeId,
+          date: r.date,
+          checkIn: r.checkIn || undefined,
+          checkOut: r.checkOut || undefined,
+          status: r.status,
+          statusLabel: r.statusLabel,
+          expectedCheckOutTime: r.expectedCheckOutTime,
+          workDurationMinutes: r.workDurationMinutes,
+          totalDurationMinutes: r.totalDurationMinutes,
+          lunchDurationMinutes: r.lunchDurationMinutes,
+          lateAllowanceUsed: r.lateAllowanceUsed,
+          isHalfDayCase: r.isHalfDayCase,
+          punches: Array.isArray(r.punches) ? r.punches : [],
+          notes: r.notes,
+        };
+
+        this.liveTodayRecord = newRecord;
+        const existingIdx = this.records.findIndex((rec) => rec.date === r.date);
+        if (existingIdx >= 0) {
+          this.records[existingIdx] = newRecord;
+        } else {
+          this.records.unshift(newRecord);
+        }
+
+        return { success: true, record: newRecord };
+      }
+
+      return {
+        success: false,
+        error: resJson?.error || `Punch failed (${response.status})`,
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: false,
+        error: err.name === 'AbortError' ? 'Punch timed out.' : 'Failed to reach punch endpoint.',
+      };
+    }
   }
 
   getRecords(): AttendanceRecord[] {
@@ -23,6 +296,9 @@ class AttendanceService {
 
   getTodayRecord(dateStr?: string): AttendanceRecord | undefined {
     const targetDate = dateStr || new Date().toISOString().split('T')[0];
+    if (this.liveTodayRecord && this.liveTodayRecord.date === targetDate) {
+      return this.liveTodayRecord;
+    }
     return this.records.find((r) => r.date === targetDate);
   }
 
@@ -132,6 +408,10 @@ class AttendanceService {
 
   getMonthlySummary(monthPrefix?: string): MonthlyAttendanceSummary {
     const month = monthPrefix || new Date().toISOString().substring(0, 7);
+    if (this.liveSummary && this.liveSummary.month === month) {
+      return this.liveSummary;
+    }
+
     const monthlyRecords = this.records.filter((r) => r.date.startsWith(month));
 
     // Calculate actual valid working days strictly excluding holidays and weekly offs

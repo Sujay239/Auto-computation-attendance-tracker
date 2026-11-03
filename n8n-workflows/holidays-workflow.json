@@ -1,0 +1,319 @@
+{
+  "name": "Auto Computation - Company Holidays Calendar (Holidays)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "holidays",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "hol1a2b3-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /holidays",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "holidays-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\n// 1. Extract Token from Authorization header (Bearer <token>) or body/query\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "hol1a2b3-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "hol1a2b3-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    callerId: String(claims.sub).trim(),\n    callerRole: String(claims.role || 'EMPLOYEE').toUpperCase().trim()\n  }\n}];"
+      },
+      "id": "hol1a2b3-0004-4000-8000-000000000004",
+      "name": "Code - Parse Claims",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "hol1a2b3-0005-4000-8000-000000000005",
+      "name": "If - Valid Auth?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id,\n  name,\n  date::TEXT AS date,\n  day,\n  type,\n  description,\n  is_office_closed AS \"isOfficeClosed\"\nFROM holidays\nORDER BY date ASC;",
+        "options": {}
+      },
+      "id": "hol1a2b3-0006-4000-8000-000000000006",
+      "name": "Postgres - Fetch Holidays",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        140
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst holidays = [];\n\nfor (const item of items) {\n  if (item.json && item.json.id) {\n    holidays.push(item.json);\n  }\n}\n\nconst today = new Date().toISOString().split('T')[0];\nconst upcomingHolidays = holidays.filter(h => h.date >= today);\nconst next = upcomingHolidays[0] || null;\n\nlet nextHolidayInfo = {\n  holiday: null,\n  daysRemaining: 0,\n  isToday: false\n};\n\nif (next) {\n  const tDate = new Date(today);\n  const hDate = new Date(next.date);\n  const diffTime = hDate.getTime() - tDate.getTime();\n  const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));\n  nextHolidayInfo = {\n    holiday: next,\n    daysRemaining: daysRemaining,\n    isToday: next.date === today\n  };\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    holidays: holidays,\n    upcomingHolidays: upcomingHolidays,\n    nextHoliday: nextHolidayInfo,\n    totalCount: holidays.length\n  }\n}];"
+      },
+      "id": "hol1a2b3-0007-4000-8000-000000000007",
+      "name": "Code - Format Holidays Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "hol1a2b3-0008-4000-8000-000000000008",
+      "name": "Respond 200 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Failed to retrieve holidays.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "hol1a2b3-0009-4000-8000-000000000009",
+      "name": "Respond Error - 400/401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        340
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /holidays": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Parse Claims",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Parse Claims": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Auth?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Auth?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Fetch Holidays",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Fetch Holidays": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Holidays Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Holidays Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Holidays"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

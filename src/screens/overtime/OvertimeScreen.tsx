@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAttendance } from '../../context/AttendanceContext';
 import { overtimeService } from '../../services/overtimeService';
 import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
@@ -17,15 +18,22 @@ import { Badge } from '../../components/common/Badge';
 export const OvertimeScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { overtimeSummary, refreshData: refreshAttendance } = useAttendance();
   const [refreshing, setRefreshing] = useState(false);
 
-  const summary = overtimeService.getSummary();
+  const summary = overtimeSummary || overtimeService.getSummary();
   const records = overtimeService.getRecords();
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 300);
+    await overtimeService.fetchRealtimeOvertime();
+    await refreshAttendance();
+    setRefreshing(false);
   };
+
+  useEffect(() => {
+    overtimeService.fetchRealtimeOvertime();
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>

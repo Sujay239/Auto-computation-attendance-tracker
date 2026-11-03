@@ -1,5 +1,7 @@
 import holidaysData from '../data/holidays.json';
 import { HolidayItem } from '../types/company';
+import { API_CONFIG } from '../config/apiConfig';
+import { authService } from './authService';
 
 class HolidayService {
   private holidays: HolidayItem[] = [];
@@ -48,6 +50,79 @@ class HolidayService {
       daysRemaining,
       isToday: next.date === today,
     };
+  }
+
+  /**
+   * Fetch live company holidays from n8n backend using JWT Bearer token
+   */
+  async fetchRealtimeHolidays(): Promise<{
+    success: boolean;
+    holidays?: HolidayItem[];
+    upcomingHolidays?: HolidayItem[];
+    nextHoliday?: { holiday: HolidayItem | undefined; daysRemaining: number; isToday: boolean };
+    error?: string;
+  }> {
+    const token = authService.getToken();
+    if (!token) {
+      return {
+        success: true,
+        holidays: this.getHolidays(),
+        upcomingHolidays: this.getUpcomingHolidays(),
+        nextHoliday: this.getNextHoliday(),
+      };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.HOLIDAYS}`, {
+        method: 'POST',
+        headers: authService.getAuthHeaders(),
+        body: JSON.stringify({ action: 'LIST' }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `Server error HTTP ${response.status}`,
+          holidays: this.getHolidays(),
+          upcomingHolidays: this.getUpcomingHolidays(),
+          nextHoliday: this.getNextHoliday(),
+        };
+      }
+
+      const res = await response.json();
+      if (res.success && Array.isArray(res.holidays) && res.holidays.length > 0) {
+        this.holidays = res.holidays;
+        return {
+          success: true,
+          holidays: this.getHolidays(),
+          upcomingHolidays: res.upcomingHolidays || this.getUpcomingHolidays(),
+          nextHoliday: res.nextHoliday || this.getNextHoliday(),
+        };
+      }
+
+      return {
+        success: false,
+        error: res.error || 'Failed to fetch holidays',
+        holidays: this.getHolidays(),
+        upcomingHolidays: this.getUpcomingHolidays(),
+        nextHoliday: this.getNextHoliday(),
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      return {
+        success: true,
+        holidays: this.getHolidays(),
+        upcomingHolidays: this.getUpcomingHolidays(),
+        nextHoliday: this.getNextHoliday(),
+        error: err.name === 'AbortError' ? 'Holidays fetch timed out' : err.message,
+      };
+    }
   }
 
   getMonthHolidays(monthStr: string): HolidayItem[] {

@@ -41,31 +41,31 @@ export const Button: React.FC<ButtonProps> = ({
     switch (variant) {
       case 'primary':
         return {
-          container: 'bg-blue-600 active:bg-blue-700 border-transparent shadow-sm shadow-blue-500/20',
+          container: 'bg-blue-600 border-transparent shadow-sm',
           text: 'text-white font-semibold',
           spinnerColor: '#ffffff',
         };
       case 'secondary':
         return {
-          container: 'bg-slate-100 active:bg-slate-200 border-transparent',
+          container: 'bg-slate-100 border-transparent',
           text: 'text-slate-900 font-semibold',
           spinnerColor: '#0F172A',
         };
       case 'outline':
         return {
-          container: 'bg-white active:bg-slate-50 border-slate-300',
+          container: 'bg-white border-slate-300',
           text: 'text-slate-800 font-medium',
           spinnerColor: '#2563EB',
         };
       case 'destructive':
         return {
-          container: 'bg-rose-600 active:bg-rose-700 border-transparent shadow-sm shadow-rose-500/20',
+          container: 'bg-rose-600 border-transparent shadow-sm',
           text: 'text-white font-semibold',
           spinnerColor: '#ffffff',
         };
       case 'ghost':
         return {
-          container: 'bg-transparent active:bg-slate-100 border-transparent',
+          container: 'bg-transparent border-transparent',
           text: 'text-slate-700 font-medium',
           spinnerColor: '#2563EB',
         };

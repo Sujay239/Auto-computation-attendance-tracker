@@ -1,0 +1,382 @@
+{
+  "name": "Auto Computation - Attendance Full Data & Monthly View",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "attendance-full",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1f2e3d4-0001-4000-9000-000000000001",
+      "name": "Webhook - POST /attendance-full",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "attendance-full-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\n// 1. Extract Token from Authorization header (Bearer <token>) or body/query\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "a1f2e3d4-0002-4000-9000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1f2e3d4-0003-4000-9000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      authorized: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      authorized: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Outsiders are not permitted. Please log in again.\"\n    }\n  }];\n}\n\nconst authUserId = String(claims.sub).trim();\nconst authUserRole = String(claims.role || 'EMPLOYEE').toUpperCase();\nconst authUserEmail = String(claims.email || '').trim();\n\nconst webhookNode = $('Webhook - POST /attendance-full').first().json || {};\nconst webhookBody = webhookNode.body || {};\nconst requestedId = (webhookBody.employeeId || webhookBody.email || '').trim();\n\nlet targetEmployeeId = authUserId;\nif (requestedId) {\n  const isSelf = (requestedId === authUserId || requestedId.toLowerCase() === authUserEmail.toLowerCase());\n  if (isSelf) {\n    targetEmployeeId = authUserId;\n  } else if (authUserRole === 'ADMIN') {\n    targetEmployeeId = requestedId;\n  } else {\n    return [{\n      json: {\n        authorized: false,\n        statusCode: 403,\n        error: \"Forbidden: You are not authorized to view another employee's attendance records.\"\n      }\n    }];\n  }\n}\n\n// Target month (e.g. '2026-11' or current month)\nlet targetMonth = (webhookBody.month || '').trim();\nif (!/^\\d{4}-\\d{2}$/.test(targetMonth)) {\n  const now = new Date();\n  const y = now.getFullYear();\n  const m = String(now.getMonth() + 1).padStart(2, '0');\n  targetMonth = `${y}-${m}`;\n}\n\nreturn [{\n  json: {\n    authorized: true,\n    targetEmployeeId: targetEmployeeId,\n    targetMonth: targetMonth,\n    authUser: {\n      id: authUserId,\n      role: authUserRole,\n      email: authUserEmail\n    }\n  }\n}];"
+      },
+      "id": "a1f2e3d4-0004-4000-9000-000000000004",
+      "name": "Code - Enforce RBAC & Resolve Month",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.authorized }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1f2e3d4-0005-4000-9000-000000000005",
+      "name": "If - Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH \nemp AS (\n  SELECT \n    id,\n    first_name,\n    last_name,\n    email,\n    phone,\n    avatar_url,\n    designation,\n    joining_date,\n    employment_type,\n    work_location,\n    role,\n    is_active\n  FROM employees\n  WHERE id = '{{ $json.targetEmployeeId }}'\n     OR LOWER(email) = LOWER('{{ $json.targetEmployeeId }}')\n  LIMIT 1\n),\ntarget_month_info AS (\n  SELECT COALESCE(NULLIF('{{ $json.targetMonth }}', ''), TO_CHAR(CURRENT_DATE, 'YYYY-MM')) AS month_key\n),\ntoday_att AS (\n  SELECT \n    a.id,\n    a.employee_id,\n    a.date::TEXT,\n    a.check_in,\n    a.check_out,\n    a.status,\n    a.status_label,\n    a.expected_checkout_time AS expected_check_out_time,\n    a.work_duration_minutes,\n    a.total_duration_minutes,\n    a.lunch_duration_minutes,\n    a.late_allowance_used,\n    a.is_half_day_case,\n    a.notes,\n    COALESCE(json_agg(json_build_object(\n      'id', p.id,\n      'type', p.type,\n      'timestamp', p.timestamp,\n      'timeString', p.time_string,\n      'location', p.location,\n      'note', p.note\n    ) ORDER BY p.timestamp ASC) FILTER (WHERE p.id IS NOT NULL), '[]'::json) AS punches\n  FROM attendances a\n  LEFT JOIN attendance_punches p ON p.attendance_id = a.id\n  WHERE a.employee_id = (SELECT id FROM emp)\n    AND a.date = CURRENT_DATE\n  GROUP BY a.id, a.employee_id, a.date, a.check_in, a.check_out, a.status, a.status_label,\n           a.expected_checkout_time, a.work_duration_minutes, a.total_duration_minutes,\n           a.lunch_duration_minutes, a.late_allowance_used, a.is_half_day_case, a.notes\n  LIMIT 1\n),\nmonthly_att AS (\n  SELECT \n    month_key,\n    total_recorded_days,\n    present_days,\n    on_time_days,\n    within_buffer_days,\n    late_days,\n    late_allowances_used,\n    late_allowances_remaining,\n    half_days,\n    absent_days,\n    leave_days,\n    holidays,\n    total_work_hours,\n    average_hours_per_day\n  FROM v_monthly_attendance_summary\n  WHERE employee_id = (SELECT id FROM emp)\n    AND month_key = (SELECT month_key FROM target_month_info)\n  LIMIT 1\n),\nmonth_records AS (\n  SELECT COALESCE(json_agg(json_build_object(\n    'id', a.id,\n    'employeeId', a.employee_id,\n    'date', a.date::TEXT,\n    'checkIn', a.check_in,\n    'checkOut', a.check_out,\n    'status', a.status,\n    'statusLabel', a.status_label,\n    'expectedCheckOutTime', a.expected_checkout_time,\n    'workDurationMinutes', a.work_duration_minutes,\n    'totalDurationMinutes', a.total_duration_minutes,\n    'lunchDurationMinutes', a.lunch_duration_minutes,\n    'lateAllowanceUsed', a.late_allowance_used,\n    'isHalfDayCase', a.is_half_day_case,\n    'notes', a.notes,\n    'punches', COALESCE((\n      SELECT json_agg(json_build_object(\n        'id', p.id,\n        'type', p.type,\n        'timestamp', p.timestamp,\n        'timeString', p.time_string,\n        'location', p.location,\n        'note', p.note\n      ) ORDER BY p.timestamp ASC)\n      FROM attendance_punches p\n      WHERE p.attendance_id = a.id\n    ), '[]'::json)\n  ) ORDER BY a.date DESC), '[]'::json) AS records_list\n  FROM attendances a\n  WHERE a.employee_id = (SELECT id FROM emp)\n    AND TO_CHAR(a.date, 'YYYY-MM') = (SELECT month_key FROM target_month_info)\n),\nmonth_holidays AS (\n  SELECT COALESCE(json_agg(json_build_object(\n    'id', id,\n    'name', name,\n    'date', date::TEXT,\n    'day', day,\n    'type', type,\n    'description', description,\n    'isOfficeClosed', is_office_closed\n  ) ORDER BY date ASC), '[]'::json) AS holiday_list\n  FROM holidays\n  WHERE TO_CHAR(date, 'YYYY-MM') = (SELECT month_key FROM target_month_info)\n)\nSELECT \n  (CASE WHEN emp.id IS NOT NULL THEN true ELSE false END) AS employee_found,\n  (SELECT month_key FROM target_month_info) AS selected_month,\n  row_to_json(emp.*) AS employee,\n  row_to_json(today_att.*) AS today_attendance,\n  row_to_json(monthly_att.*) AS monthly_summary,\n  (SELECT records_list FROM month_records) AS month_records,\n  (SELECT holiday_list FROM month_holidays) AS holidays\nFROM (SELECT 1) dummy\nLEFT JOIN emp ON true\nLEFT JOIN today_att ON true\nLEFT JOIN monthly_att ON true\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "a1f2e3d4-0006-4000-9000-000000000006",
+      "name": "Postgres - Fetch Attendance Full Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\n\nif (!data.employee_found || !data.employee) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: \"Employee not found in database.\"\n    }\n  }];\n}\n\nconst today = data.today_attendance || {};\nconst isCheckedIn = !!today.check_in;\nconst isCheckedOut = !!today.check_out;\n\n// Calculate working days in selected month (excluding Sat/Sun)\nconst selectedMonth = data.selected_month || new Date().toISOString().substring(0, 7);\nconst [yrStr, moStr] = selectedMonth.split('-');\nconst year = parseInt(yrStr, 10);\nconst month = parseInt(moStr, 10) - 1;\nconst daysInMonth = new Date(year, month + 1, 0).getDate();\n\nlet totalWorkingDays = 0;\nfor (let d = 1; d <= daysInMonth; d++) {\n  const dayOfWeek = new Date(year, month, d).getDay();\n  if (dayOfWeek !== 0 && dayOfWeek !== 6) totalWorkingDays++;\n}\n\nconst monthly = data.monthly_summary || {};\n\nlet recordsList = [];\ntry {\n  recordsList = typeof data.month_records === 'string' \n    ? JSON.parse(data.month_records) \n    : (Array.isArray(data.month_records) ? data.month_records : []);\n} catch (e) {\n  recordsList = [];\n}\n\nlet holidaysList = [];\ntry {\n  holidaysList = typeof data.holidays === 'string' \n    ? JSON.parse(data.holidays) \n    : (Array.isArray(data.holidays) ? data.holidays : []);\n} catch (e) {\n  holidaysList = [];\n}\n\nlet todayPunches = [];\ntry {\n  todayPunches = typeof today.punches === 'string'\n    ? JSON.parse(today.punches)\n    : (Array.isArray(today.punches) ? today.punches : []);\n} catch (e) {\n  todayPunches = [];\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    month: selectedMonth,\n    daysInMonth: daysInMonth,\n    employee: {\n      id: data.employee.id,\n      firstName: data.employee.first_name,\n      lastName: data.employee.last_name,\n      email: data.employee.email,\n      phone: data.employee.phone,\n      avatarUrl: data.employee.avatar_url || null,\n      designation: data.employee.designation,\n      workLocation: data.employee.work_location || 'Chinar Park, Teghoria, Kolkata (In-Office)',\n      role: data.employee.role || 'EMPLOYEE'\n    },\n    todayRecord: {\n      id: today.id || null,\n      date: today.date || new Date().toISOString().split('T')[0],\n      checkIn: today.check_in || null,\n      checkOut: today.check_out || null,\n      status: today.status || 'PENDING',\n      statusLabel: today.status_label || (isCheckedIn ? 'Checked In' : 'Awaiting Punch'),\n      expectedCheckOutTime: today.expected_check_out_time || '19:00',\n      workDurationMinutes: parseInt(today.work_duration_minutes || '0', 10),\n      totalDurationMinutes: parseInt(today.total_duration_minutes || '0', 10),\n      lunchDurationMinutes: parseInt(today.lunch_duration_minutes || '60', 10),\n      lateAllowanceUsed: today.late_allowance_used || null,\n      isHalfDayCase: !!today.is_half_day_case,\n      isCheckedIn: isCheckedIn,\n      isCheckedOut: isCheckedOut,\n      punches: todayPunches,\n      notes: today.notes || null\n    },\n    summary: {\n      monthKey: selectedMonth,\n      totalWorkingDays: totalWorkingDays,\n      presentDays: parseInt(monthly.present_days || '0', 10),\n      onTimeDays: parseInt(monthly.on_time_days || '0', 10),\n      withinBufferDays: parseInt(monthly.within_buffer_days || '0', 10),\n      lateDays: parseInt(monthly.late_days || '0', 10),\n      lateAllowancesUsed: parseInt(monthly.late_allowances_used || '0', 10),\n      lateAllowancesRemaining: Math.max(0, 3 - parseInt(monthly.late_allowances_used || '0', 10)),\n      halfDays: parseInt(monthly.half_days || '0', 10),\n      absentDays: parseInt(monthly.absent_days || '0', 10),\n      leaveDays: parseInt(monthly.leave_days || '0', 10),\n      holidays: parseInt(monthly.holidays || '0', 10),\n      totalWorkHours: parseFloat(monthly.total_work_hours || '0.0'),\n      averageHoursPerDay: parseFloat(monthly.average_hours_per_day || '0.0')\n    },\n    records: recordsList,\n    holidays: holidaysList,\n    rules: {\n      officeOpening: \"10:00 AM\",\n      graceBufferLimit: \"10:20 AM (Must stay until 07:30 PM)\",\n      maximumLateArrivalTime: \"10:45 AM\",\n      monthlyLateAllowance: 3,\n      lunchBreakMinutes: 60,\n      halfDayCutoff: \"Arrival after 10:45 AM or after 3 late allowances exhausted\"\n    }\n  }\n}];"
+      },
+      "id": "a1f2e3d4-0007-4000-9000-000000000007",
+      "name": "Code - Format Attendance Full Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1f2e3d4-0008-4000-9000-000000000008",
+      "name": "If - Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1f2e3d4-0009-4000-9000-000000000009",
+      "name": "Respond 200 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2140,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1f2e3d4-0010-4000-9000-000000000010",
+      "name": "Respond 404 - Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2140,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 401 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a1f2e3d4-0011-4000-9000-000000000011",
+      "name": "Respond Error - 401/403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /attendance-full": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Enforce RBAC & Resolve Month",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Enforce RBAC & Resolve Month": {
+      "main": [
+        [
+          {
+            "node": "If - Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Fetch Attendance Full Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 401/403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Fetch Attendance Full Data": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Attendance Full Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Attendance Full Response": {
+      "main": [
+        [
+          {
+            "node": "If - Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Found?": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 404 - Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Attendance Management"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

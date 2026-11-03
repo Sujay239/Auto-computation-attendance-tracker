@@ -1,0 +1,419 @@
+{
+  "name": "Auto Computation - Attendance Punch (In / Out)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "attendance-punch",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p1a2b3c4-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /attendance-punch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "attendance-punch-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\n// 1. Extract Token from Authorization header (Bearer <token>) or body/query\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "p1a2b3c4-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "p1a2b3c4-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst employeeId = String(claims.sub).trim();\nconst webhookNode = $('Webhook - POST /attendance-punch').first().json || {};\nconst body = webhookNode.body || {};\n\nconst punchType = (body.type || 'IN').toUpperCase().trim();\nif (punchType !== 'IN' && punchType !== 'OUT') {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 400,\n      error: \"Invalid punch type: must be either 'IN' or 'OUT'.\"\n    }\n  }];\n}\n\n// Calculate IST current time\nconst now = new Date();\nconst istString = now.toLocaleString(\"en-US\", { timeZone: \"Asia/Kolkata\" });\nconst istDate = new Date(istString);\n\nlet hours = istDate.getHours();\nconst minutes = istDate.getMinutes();\nconst period = hours >= 12 ? 'PM' : 'AM';\nlet hours12 = hours % 12;\nif (hours12 === 0) hours12 = 12;\n\nconst currentTime12H = `${hours12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;\nconst punchTime12H = body.customTime ? String(body.customTime).trim() : currentTime12H;\nconst location = body.location || 'Office Biometric / Mobile App';\nconst notes = body.notes || body.note || null;\n\nreturn [{\n  json: {\n    valid: true,\n    employeeId: employeeId,\n    punchType: punchType,\n    punchTime12H: punchTime12H,\n    location: location,\n    notes: notes\n  }\n}];"
+      },
+      "id": "p1a2b3c4-0004-4000-8000-000000000004",
+      "name": "Code - Validate Punch Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "p1a2b3c4-0005-4000-8000-000000000005",
+      "name": "If - Valid Token & Type?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  (CASE WHEN a.id IS NOT NULL THEN true ELSE false END) AS has_record_today,\n  a.id AS attendance_id,\n  a.date::TEXT AS attendance_date,\n  a.check_in,\n  a.check_out,\n  a.status,\n  a.status_label,\n  a.expected_checkout_time,\n  a.late_allowance_used,\n  a.total_duration_minutes,\n  a.work_duration_minutes,\n  COALESCE((\n    SELECT COUNT(*) FILTER (WHERE late_allowance_used IS NOT NULL AND late_allowance_used > 0)\n    FROM attendances\n    WHERE employee_id = '{{ $json.employeeId }}'\n      AND TO_CHAR(date, 'YYYY-MM') = TO_CHAR(CURRENT_DATE, 'YYYY-MM')\n      AND date < CURRENT_DATE\n  ), 0) AS monthly_lates_used,\n  COALESCE((\n    SELECT available FROM leave_balances \n    WHERE employee_id = '{{ $json.employeeId }}' AND leave_type = 'HALF_DAY' AND year = EXTRACT(YEAR FROM CURRENT_DATE)::INT \n    LIMIT 1\n  ), 0) AS half_day_available,\n  COALESCE((\n    SELECT available FROM leave_balances \n    WHERE employee_id = '{{ $json.employeeId }}' AND leave_type = 'CASUAL' AND year = EXTRACT(YEAR FROM CURRENT_DATE)::INT \n    LIMIT 1\n  ), 0) AS casual_available\nFROM (SELECT 1) dummy\nLEFT JOIN attendances a \n  ON a.employee_id = '{{ $json.employeeId }}' \n AND a.date = CURRENT_DATE\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "p1a2b3c4-0006-4000-8000-000000000006",
+      "name": "Postgres - Check Today Attendance",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const reqInfo = $('Code - Validate Punch Request').first().json || {};\nconst row = $input.first().json || {};\n\nconst employeeId = reqInfo.employeeId;\nconst punchType = reqInfo.punchType;\nconst punchTime = reqInfo.punchTime12H;\nconst location = reqInfo.location;\n\nfunction timeStringToMinutes(timeStr) {\n  if (!timeStr) return 0;\n  const clean = timeStr.trim();\n  const isPM = /PM$/i.test(clean);\n  const isAM = /AM$/i.test(clean);\n  const raw = clean.replace(/\\s*(AM|PM)$/i, '').trim();\n  const parts = raw.split(':');\n  let h = parseInt(parts[0], 10);\n  const m = parseInt(parts[1] || '0', 10);\n  if (isNaN(h) || isNaN(m)) return 0;\n  if (isPM && h < 12) h += 12;\n  else if (isAM && h === 12) h = 0;\n  return h * 60 + m;\n}\n\nconst punchMinutes = timeStringToMinutes(punchTime);\nconst nowIso = new Date().toISOString();\nconst dateStr = nowIso.split('T')[0];\nconst attendanceId = row.attendance_id || `att-${dateStr}-${employeeId}`;\nconst punchId = `p-${Date.now()}-${employeeId}`;\n\nif (punchType === 'IN') {\n  if (row.has_record_today && row.check_in) {\n    return [{\n      json: {\n        allowed: false,\n        statusCode: 400,\n        error: `You have already checked in today at ${row.check_in}.`\n      }\n    }];\n  }\n\n  // Arrival Policy Evaluation:\n  // Standard Opening: 10:00 AM (600 mins)\n  // Buffer Limit: 10:20 AM (620 mins) -> Stay until 7:30 PM (19:30)\n  // Late Allowance Limit: 10:45 AM (645 mins)\n  const prevLates = parseInt(row.monthly_lates_used || '0', 10);\n  let status = 'ON_TIME';\n  let statusLabel = 'On Time';\n  let expectedCheckout = '19:00';\n  let lateAllowanceUsed = null;\n  let isHalfDayCase = false;\n  let halfDayReason = null;\n\n  let leaveAdjustmentSql = '';\n  if (punchMinutes > 645 || (punchMinutes > 620 && prevLates >= 3)) {\n    const halfDayAvail = parseFloat(row.half_day_available || '0');\n    const casualAvail = parseFloat(row.casual_available || '0');\n    const adjLeaveId = 'lev-adj-' + attendanceId;\n    const notifId = 'notif-adj-' + attendanceId;\n\n    if (halfDayAvail >= 0.5) {\n      leaveAdjustmentSql = `\n        UPDATE leave_balances\n        SET used = used + 0.5\n        WHERE employee_id = '${employeeId}' AND leave_type = 'HALF_DAY' AND year = EXTRACT(YEAR FROM CURRENT_DATE)::INT;\n\n        INSERT INTO leave_requests (\n          id, employee_id, leave_type, duration_type,\n          start_date, end_date, days_count, reason,\n          status, applied_on, approved_or_rejected_by,\n          reviewed_on, comments, whatsapp_notice_acknowledged\n        ) VALUES (\n          '${adjLeaveId}', '${employeeId}', 'HALF_DAY', 'FIRST_HALF',\n          CURRENT_DATE, CURRENT_DATE, 0.5,\n          'Auto-adjustment for late arrival past cutoff to protect salary',\n          'APPROVED', CURRENT_DATE, 'SYSTEM_SALARY_PROTECTION', CURRENT_DATE,\n          'Auto-adjusted from Half-Day Leave balance to protect monthly salary.',\n          TRUE\n        ) ON CONFLICT (id) DO NOTHING;\n\n        INSERT INTO notifications (\n          id, employee_id, category, title, message, action_route, priority, is_read\n        ) VALUES (\n          '${notifId}', '${employeeId}', 'LEAVE_UPDATE',\n          'Salary Protected by Leave Balance',\n          'Your late arrival today at ' || '${punchTime}' || ' was automatically adjusted against 0.5 Half-Day Leave. Zero salary deducted.',\n          '/salary', 'NORMAL', FALSE\n        ) ON CONFLICT (id) DO NOTHING;\n      `;\n    } else if (casualAvail >= 0.5) {\n      leaveAdjustmentSql = `\n        UPDATE leave_balances\n        SET used = used + 0.5\n        WHERE employee_id = '${employeeId}' AND leave_type = 'CASUAL' AND year = EXTRACT(YEAR FROM CURRENT_DATE)::INT;\n\n        INSERT INTO leave_requests (\n          id, employee_id, leave_type, duration_type,\n          start_date, end_date, days_count, reason,\n          status, applied_on, approved_or_rejected_by,\n          reviewed_on, comments, whatsapp_notice_acknowledged\n        ) VALUES (\n          '${adjLeaveId}', '${employeeId}', 'CASUAL', 'FIRST_HALF',\n          CURRENT_DATE, CURRENT_DATE, 0.5,\n          'Auto-adjustment for late arrival past cutoff (Casual Leave)',\n          'APPROVED', CURRENT_DATE, 'SYSTEM_SALARY_PROTECTION', CURRENT_DATE,\n          'Half-Day balance was 0. Auto-adjusted from Casual Leave balance to protect monthly salary.',\n          TRUE\n        ) ON CONFLICT (id) DO NOTHING;\n\n        INSERT INTO notifications (\n          id, employee_id, category, title, message, action_route, priority, is_read\n        ) VALUES (\n          '${notifId}', '${employeeId}', 'LEAVE_UPDATE',\n          'Salary Protected by Casual Leave',\n          'Your late arrival today at ' || '${punchTime}' || ' was automatically adjusted against 0.5 Casual Leave. Zero salary deducted.',\n          '/salary', 'NORMAL', FALSE\n        ) ON CONFLICT (id) DO NOTHING;\n      `;\n    }\n  }\n\n  if (punchMinutes <= 600) {\n    status = 'ON_TIME';\n    statusLabel = 'On Time';\n    expectedCheckout = '19:00';\n  } else if (punchMinutes <= 620) {\n    status = 'WITHIN_BUFFER';\n    statusLabel = 'Within Buffer';\n    expectedCheckout = '19:30';\n  } else if (punchMinutes <= 645) {\n    if (prevLates < 3) {\n      const allowanceNum = prevLates + 1;\n      status = 'LATE';\n      statusLabel = `Late (Allowance ${allowanceNum} of 3)`;\n      expectedCheckout = '19:30';\n      lateAllowanceUsed = allowanceNum;\n    } else {\n      status = 'HALF_DAY';\n      statusLabel = 'Half Day (Exceeded 3 Late Allowances)';\n      expectedCheckout = '19:30';\n      isHalfDayCase = true;\n      halfDayReason = 'Arrival after 10:20 AM and exhausted all 3 monthly late allowances.';\n    }\n  } else {\n    status = 'HALF_DAY';\n    statusLabel = 'Half Day (After 10:45 AM Cutoff)';\n    expectedCheckout = '19:30';\n    isHalfDayCase = true;\n    halfDayReason = `Arrival at ${punchTime} was beyond maximum 10:45 AM cutoff.`;\n  }\n\n  const sqlQuery = `\n    INSERT INTO attendances (\n      id, employee_id, date, check_in, check_in_timestamp,\n      status, status_label, expected_checkout_time,\n      late_allowance_used, is_half_day_case, half_day_reason,\n      lunch_duration_minutes, total_duration_minutes, work_duration_minutes\n    ) VALUES (\n      '${attendanceId}', '${employeeId}', CURRENT_DATE,\n      '${punchTime}', CURRENT_TIMESTAMP,\n      '${status}', '${statusLabel.replace(/'/g, \"''\")}', '${expectedCheckout}',\n      ${lateAllowanceUsed !== null ? lateAllowanceUsed : 'NULL'},\n      ${isHalfDayCase ? 'TRUE' : 'FALSE'},\n      ${halfDayReason ? `'${halfDayReason.replace(/'/g, \"''\")}'` : 'NULL'},\n      60, 0, 0\n    )\n    ON CONFLICT (employee_id, date) DO UPDATE SET\n      check_in = EXCLUDED.check_in,\n      check_in_timestamp = EXCLUDED.check_in_timestamp,\n      status = EXCLUDED.status,\n      status_label = EXCLUDED.status_label,\n      expected_checkout_time = EXCLUDED.expected_checkout_time,\n      late_allowance_used = EXCLUDED.late_allowance_used,\n      is_half_day_case = EXCLUDED.is_half_day_case,\n      half_day_reason = EXCLUDED.half_day_reason;\n\n    INSERT INTO attendance_punches (\n      id, attendance_id, employee_id, type, timestamp, time_string, location, note\n    ) VALUES (\n      '${punchId}', '${attendanceId}', '${employeeId}',\n      'IN', CURRENT_TIMESTAMP, '${punchTime}',\n      '${location.replace(/'/g, \"''\")}', '${statusLabel.replace(/'/g, \"''\")}'\n    );\n\n    ${leaveAdjustmentSql}\n  `;\n\n  return [{\n    json: {\n      allowed: true,\n      employeeId: employeeId,\n      attendanceId: attendanceId,\n      punchType: 'IN',\n      sqlQuery: sqlQuery\n    }\n  }];\n} else {\n  // Punch OUT\n  if (!row.has_record_today || !row.check_in) {\n    return [{\n      json: {\n        allowed: false,\n        statusCode: 400,\n        error: 'Cannot punch out without punching in first.'\n      }\n    }];\n  }\n\n  if (row.check_out) {\n    return [{\n      json: {\n        allowed: false,\n        statusCode: 400,\n        error: `You have already punched out today at ${row.check_out}.`\n      }\n    }];\n  }\n\n  const checkInMin = timeStringToMinutes(row.check_in);\n  const grossDuration = Math.max(0, punchMinutes - checkInMin);\n  const lunchDuration = 60;\n  const netWorkDuration = Math.max(0, grossDuration - lunchDuration);\n  const expectedOutMin = timeStringToMinutes(row.expected_checkout_time || '19:00');\n  const overtimeMin = Math.max(0, punchMinutes - expectedOutMin);\n\n  // Policy: Overtime starts after 07:30 PM (1170 minutes from midnight)\n  const otThresholdMin = 1170; // 19:30\n  let isOvertime = false;\n  let otDurationMinutes = 0;\n  let otHoursFormatted = '';\n  let otInsertSql = '';\n\n  if (punchMinutes > otThresholdMin) {\n    isOvertime = true;\n    otDurationMinutes = punchMinutes - otThresholdMin;\n    const otHours = Math.floor(otDurationMinutes / 60);\n    const otRemainingMins = otDurationMinutes % 60;\n    otHoursFormatted = (otHours > 0 ? `${otHours}h ` : '') + (otRemainingMins > 0 || otHours === 0 ? `${otRemainingMins}m` : '').trim();\n\n    const otId = `ot-${dateStr}-${employeeId}`;\n    const notifId = `notif-${Date.now()}-${employeeId}`;\n\n    otInsertSql = `\n      INSERT INTO overtime_records (\n        id, employee_id, date, start_time, end_time,\n        duration_minutes, hours_formatted, reason, approver,\n        status, compensation_method, reimbursement_status,\n        early_leave_status, notes\n      ) VALUES (\n        '${otId}',\n        '${employeeId}',\n        CURRENT_DATE,\n        '07:30 PM',\n        '${punchTime}',\n        ${otDurationMinutes},\n        '${otHoursFormatted}',\n        'Auto-logged shift extension beyond 07:30 PM',\n        'Admin',\n        'PENDING',\n        'EARLY_LEAVE_ADJUSTMENT',\n        'NOT_APPLICABLE',\n        'NOT_APPLICABLE',\n        'Auto-generated on punch out. Pending admin review for weekly early-leave adjustment credit.'\n      )\n      ON CONFLICT (id) DO UPDATE SET\n        end_time = EXCLUDED.end_time,\n        duration_minutes = EXCLUDED.duration_minutes,\n        hours_formatted = EXCLUDED.hours_formatted,\n        updated_at = CURRENT_TIMESTAMP;\n\n      INSERT INTO notifications (\n        id, employee_id, category, title, message, action_route, priority, is_read\n      ) VALUES (\n        '${notifId}',\n        '${employeeId}',\n        'OVERTIME_UPDATE',\n        'Overtime Logged (${otHoursFormatted})',\n        'You clocked out at ${punchTime} (${otHoursFormatted} overtime). Auto-submitted to Admin as PENDING for early-leave compensation.',\n        '/(tabs)/overtime',\n        'NORMAL',\n        FALSE\n      );\n    `;\n  }\n\n  const sqlQuery = `\n    UPDATE attendances SET\n      check_out = '${punchTime}',\n      check_out_timestamp = CURRENT_TIMESTAMP,\n      total_duration_minutes = ${grossDuration},\n      work_duration_minutes = ${netWorkDuration},\n      overtime_minutes = ${overtimeMin}\n    WHERE id = '${attendanceId}';\n\n    INSERT INTO attendance_punches (\n      id, attendance_id, employee_id, type, timestamp, time_string, location, note\n    ) VALUES (\n      '${punchId}', '${attendanceId}', '${employeeId}',\n      'OUT', CURRENT_TIMESTAMP, '${punchTime}',\n      '${location.replace(/'/g, \"''\")}', 'Shift ended'\n    );\n\n    ${otInsertSql}\n  `;\n\n  return [{\n    json: {\n      allowed: true,\n      employeeId: employeeId,\n      attendanceId: attendanceId,\n      punchType: 'OUT',\n      isOvertime: isOvertime,\n      otDurationMinutes: otDurationMinutes,\n      otHoursFormatted: otHoursFormatted,\n      sqlQuery: sqlQuery\n    }\n  }];\n}"
+      },
+      "id": "p1a2b3c4-0007-4000-8000-000000000007",
+      "name": "Code - Evaluate Punch Rules & Prepare SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.allowed }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "p1a2b3c4-0008-4000-8000-000000000008",
+      "name": "If - Punch Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sqlQuery }}\n\nWITH att AS (\n  SELECT \n    id,\n    employee_id,\n    date::TEXT,\n    check_in,\n    check_out,\n    status,\n    status_label,\n    expected_checkout_time AS expected_check_out_time,\n    work_duration_minutes,\n    total_duration_minutes,\n    lunch_duration_minutes,\n    late_allowance_used,\n    is_half_day_case,\n    notes\n  FROM attendances\n  WHERE id = '{{ $json.attendanceId }}'\n  LIMIT 1\n),\npunches AS (\n  SELECT COALESCE(json_agg(json_build_object(\n    'id', id,\n    'type', type,\n    'timestamp', timestamp,\n    'timeString', time_string,\n    'location', location,\n    'note', note\n  ) ORDER BY timestamp ASC), '[]'::json) AS punch_list\n  FROM attendance_punches\n  WHERE attendance_id = '{{ $json.attendanceId }}'\n)\nSELECT \n  row_to_json(att.*) AS record,\n  (SELECT punch_list FROM punches) AS punches\nFROM att;",
+        "options": {}
+      },
+      "id": "p1a2b3c4-0009-4000-8000-000000000009",
+      "name": "Postgres - Execute Punch & Return Result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2140,
+        40
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst record = data.record || {};\nconst punches = Array.isArray(data.punches) ? data.punches : [];\nconst punchRuleData = $('Code - Evaluate Punch Rules & Prepare SQL').first().json || {};\n\nconst isCheckedIn = !!record.check_in;\nconst isCheckedOut = !!record.check_out;\n\nlet message = isCheckedOut \n  ? \"Punched out successfully. Shift ended.\" \n  : \"Punched in successfully. Have a productive day!\";\n\nif (punchRuleData.isOvertime) {\n  message = `Punched out at ${record.check_out}. Overtime of ${punchRuleData.otHoursFormatted} automatically logged as PENDING for admin approval.`;\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: message,\n    record: {\n      id: record.id,\n      employeeId: record.employee_id,\n      date: record.date,\n      checkIn: record.check_in || null,\n      checkOut: record.check_out || null,\n      status: record.status || 'PENDING',\n      statusLabel: record.status_label || (isCheckedIn ? 'Checked In' : 'Awaiting Punch'),\n      expectedCheckOutTime: record.expected_check_out_time || '19:00',\n      workDurationMinutes: parseInt(record.work_duration_minutes || '0', 10),\n      totalDurationMinutes: parseInt(record.total_duration_minutes || '0', 10),\n      lunchDurationMinutes: parseInt(record.lunch_duration_minutes || '60', 10),\n      lateAllowanceUsed: record.late_allowance_used || null,\n      isHalfDayCase: !!record.is_half_day_case,\n      isCheckedIn: isCheckedIn,\n      isCheckedOut: isCheckedOut,\n      punches: punches,\n      notes: record.notes || null\n    },\n    overtime: punchRuleData.isOvertime ? {\n      recorded: true,\n      durationMinutes: punchRuleData.otDurationMinutes,\n      hoursFormatted: punchRuleData.otHoursFormatted,\n      status: \"PENDING\",\n      compensationMethod: \"EARLY_LEAVE_ADJUSTMENT\"\n    } : null\n  }\n}];"
+      },
+      "id": "p1a2b3c4-0010-4000-8000-000000000010",
+      "name": "Code - Format Punch Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "p1a2b3c4-0011-4000-8000-000000000011",
+      "name": "Respond 200 - Punch Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2580,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Punch request rejected.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "p1a2b3c4-0012-4000-8000-000000000012",
+      "name": "Respond Error - 400/401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /attendance-punch": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Punch Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Punch Request": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Token & Type?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Token & Type?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Check Today Attendance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Check Today Attendance": {
+      "main": [
+        [
+          {
+            "node": "Code - Evaluate Punch Rules & Prepare SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Evaluate Punch Rules & Prepare SQL": {
+      "main": [
+        [
+          {
+            "node": "If - Punch Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Punch Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Execute Punch & Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Execute Punch & Return Result": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Punch Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Punch Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Punch Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Attendance Punch"
+    },
+    {
+      "name": "Overtime Integration"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

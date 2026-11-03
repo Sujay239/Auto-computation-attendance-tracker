@@ -5,10 +5,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useAttendance } from '../../context/AttendanceContext';
 import { leaveService } from '../../services/leaveService';
@@ -21,13 +24,63 @@ import { Avatar } from '../../components/common/Avatar';
 export const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
-  const { summary } = useAttendance();
+  const { user, logout, updateAvatar } = useAuth();
+  const { summary, totalLeaveAvailable } = useAttendance();
 
   const [loggingOut, setLoggingOut] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
-  const leaveBalances = leaveService.getBalances();
-  const totalLeave = leaveBalances.reduce((acc, curr) => acc + curr.available, 0);
+  const totalLeave = totalLeaveAvailable;
+
+  const handlePickAvatar = async () => {
+    setAvatarError(null);
+    setAvatarMessage(null);
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        setAvatarError('Permission to access photos is required to change avatar.');
+        return;
+      }
+
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (pickerResult.canceled || !pickerResult.assets || !pickerResult.assets[0]) {
+        return;
+      }
+
+      const asset = pickerResult.assets[0];
+      const base64Data = asset.base64;
+      if (!base64Data) {
+        setAvatarError('Failed to convert image to base64 format.');
+        return;
+      }
+
+      const mimeType = asset.mimeType || 'image/jpeg';
+      const dataUri = `data:${mimeType};base64,${base64Data}`;
+
+      setUploadingAvatar(true);
+      const res = await updateAvatar(dataUri);
+      setUploadingAvatar(false);
+
+      if (res.success) {
+        setAvatarMessage('Avatar updated successfully!');
+        setTimeout(() => setAvatarMessage(null), 3500);
+      } else {
+        setAvatarError(res.error || 'Failed to update avatar in database.');
+      }
+    } catch (err: any) {
+      setUploadingAvatar(false);
+      setAvatarError(err.message || 'An error occurred while uploading avatar.');
+    }
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -52,14 +105,65 @@ export const ProfileScreen: React.FC = () => {
       >
         {/* Profile Identity Card */}
         <Card className="mb-4 p-5 items-center">
-          <View className="mb-3">
-            <Avatar
-              uri={user?.avatarUrl}
-              name={user ? `${user.firstName} ${user.lastName}` : 'Sujay Verma'}
-              size={80}
-              showStatusDot
-            />
+          <View className="mb-2">
+            <TouchableOpacity
+              onPress={handlePickAvatar}
+              activeOpacity={0.8}
+              disabled={uploadingAvatar}
+              style={{ position: 'relative' }}
+            >
+              <Avatar
+                uri={user?.avatarUrl}
+                name={user ? `${user.firstName} ${user.lastName}` : 'Rahul Sharma'}
+                size={84}
+                showStatusDot={!uploadingAvatar}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  backgroundColor: '#2563EB',
+                  borderRadius: 14,
+                  width: 28,
+                  height: 28,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 2,
+                  borderColor: '#FFFFFF',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 3,
+                  elevation: 3,
+                }}
+              >
+                {uploadingAvatar ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Ionicons name="camera" size={14} color="#ffffff" />
+                )}
+              </View>
+            </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.7} className="mb-2">
+            <Text className="text-[11px] font-semibold text-blue-600">
+              {uploadingAvatar ? 'Converting & Uploading Base64...' : 'Tap photo to change avatar'}
+            </Text>
+          </TouchableOpacity>
+
+          {avatarMessage ? (
+            <View className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg mb-2">
+              <Text className="text-[11px] font-semibold text-emerald-700">{avatarMessage}</Text>
+            </View>
+          ) : null}
+
+          {avatarError ? (
+            <View className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg mb-2">
+              <Text className="text-[11px] font-semibold text-rose-700">{avatarError}</Text>
+            </View>
+          ) : null}
 
           <Text className="text-xl font-black text-slate-900">
             {user ? `${user.firstName} ${user.lastName}` : 'Sujay Verma'}
@@ -146,6 +250,27 @@ export const ProfileScreen: React.FC = () => {
                 </Text>
                 <Text className="text-[10px] text-slate-400">
                   Reminders, approvals & announcements
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/salary' as any)}
+            activeOpacity={0.7}
+            className="flex-row items-center justify-between p-3.5"
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="w-8 h-8 rounded-xl bg-amber-50 items-center justify-center">
+                <Ionicons name="calculator-outline" size={17} color="#D97706" />
+              </View>
+              <View>
+                <Text className="text-xs font-bold text-slate-800">
+                  Salary & Deductions Breakdown
+                </Text>
+                <Text className="text-[10px] text-slate-400">
+                  Daily & half-day rates, leave adjustments & net pay
                 </Text>
               </View>
             </View>

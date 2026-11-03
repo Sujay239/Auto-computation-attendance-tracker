@@ -28,16 +28,16 @@ export const AttendanceScreen: React.FC = () => {
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    refreshData();
-    setTimeout(() => setRefreshing(false), 300);
+    await refreshData();
+    setRefreshing(false);
   };
 
-  const handlePunch = () => {
+  const handlePunch = async () => {
     setPunchMessage(null);
     if (!isCheckedIn) {
-      const res = punchIn();
+      const res = await punchIn();
       if (res.success && res.record) {
         setPunchMessage(`Checked in at ${res.record.checkIn} - ${res.record.statusLabel}`);
       } else {
@@ -49,18 +49,16 @@ export const AttendanceScreen: React.FC = () => {
     }
   };
 
-  const handleConfirmPunchOut = () => {
+  const handleConfirmPunchOut = async () => {
     setIsPunchingOut(true);
-    setTimeout(() => {
-      const res = punchOut();
-      setIsPunchingOut(false);
-      setShowPunchOutModal(false);
-      if (res.success && res.record) {
-        setPunchMessage(`Checked out at ${res.record.checkOut}`);
-      } else {
-        setPunchMessage(res.error || 'Check-out failed');
-      }
-    }, 350);
+    const res = await punchOut();
+    setIsPunchingOut(false);
+    setShowPunchOutModal(false);
+    if (res.success && res.record) {
+      setPunchMessage(`Checked out at ${res.record.checkOut}`);
+    } else {
+      setPunchMessage(res.error || 'Check-out failed');
+    }
   };
 
   // Calendar days generation for current month demo (Nov 2026)

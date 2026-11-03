@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAttendance } from '../../context/AttendanceContext';
 import { leaveService } from '../../services/leaveService';
+import { LeaveBalance, LeaveRequest } from '../../types/leave';
 import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
@@ -19,15 +21,41 @@ import { EmptyState } from '../../components/common/EmptyState';
 export const LeaveScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { leaveBalances, refreshData: refreshAttendance } = useAttendance();
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [requests, setRequests] = useState<LeaveRequest[]>(leaveService.getRequests());
+  const [liveBalances, setLiveBalances] = useState<LeaveBalance[]>(
+    leaveBalances.length > 0 ? leaveBalances : leaveService.getBalances()
+  );
 
-  const balances = leaveService.getBalances();
-  const requests = leaveService.getRequests();
+  const loadLeaves = async () => {
+    try {
+      const res = await leaveService.fetchRealtimeLeaves();
+      if (res.requests) {
+        setRequests(res.requests);
+      }
+      if (res.balances && res.balances.length > 0) {
+        setLiveBalances(res.balances);
+      }
+    } catch {
+      // keep existing state
+    }
+  };
 
-  const handleRefresh = () => {
+  useEffect(() => {
+    loadLeaves();
+  }, []);
+
+  const balances = liveBalances.length > 0 ? liveBalances : (leaveBalances.length > 0 ? leaveBalances : leaveService.getBalances());
+
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 300);
+    await Promise.all([
+      refreshAttendance(),
+      loadLeaves(),
+    ]);
+    setRefreshing(false);
   };
 
   const filteredRequests = requests.filter((r) => {
@@ -68,20 +96,22 @@ export const LeaveScreen: React.FC = () => {
           Available Leave Entitlements
         </Text>
 
-        <View className="flex-row gap-2.5 mb-4">
+        <View className="flex-row flex-wrap justify-between gap-y-2.5 mb-4">
           {balances.map((b) => (
-            <Card key={b.type} className="flex-1 p-3">
-              <Text className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">
-                {b.label}
-              </Text>
-              <Text className="text-2xl font-black text-slate-900">
-                {b.available}
-              </Text>
-              <View className="flex-row items-center justify-between mt-1 pt-1 border-t border-slate-100">
-                <Text className="text-[10px] text-slate-400">Used: {b.used}</Text>
-                <Text className="text-[10px] text-slate-400">Total: {b.total}</Text>
-              </View>
-            </Card>
+            <View key={b.type} style={{ width: '48.5%' }}>
+              <Card className="p-3">
+                <Text className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">
+                  {b.label}
+                </Text>
+                <Text className="text-2xl font-black text-slate-900">
+                  {b.available}
+                </Text>
+                <View className="flex-row items-center justify-between mt-1 pt-1 border-t border-slate-100">
+                  <Text className="text-[10px] text-slate-400">Used: {b.used}</Text>
+                  <Text className="text-[10px] text-slate-400">Total: {b.total}</Text>
+                </View>
+              </Card>
+            </View>
           ))}
         </View>
 

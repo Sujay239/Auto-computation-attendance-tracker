@@ -27,31 +27,37 @@ export const HomeScreen: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { todayRecord, isCheckedIn, isCheckedOut, punchIn, punchOut, summary, refreshData } =
-    useAttendance();
+  const {
+    todayRecord,
+    isCheckedIn,
+    isCheckedOut,
+    punchIn,
+    punchOut,
+    summary,
+    totalLeaveAvailable,
+    overtimeSummary,
+    upcomingHoliday,
+    unreadNotificationsCount,
+    refreshData,
+  } = useAttendance();
 
   const [refreshing, setRefreshing] = useState(false);
   const [punchFeedback, setPunchFeedback] = useState<string | null>(null);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
 
-  const leaveBalances = leaveService.getBalances();
-  const totalLeaveAvailable = leaveBalances.reduce((acc, curr) => acc + curr.available, 0);
-
-  const otSummary = overtimeService.getSummary();
-  const unreadNotifsCount = notificationService.getUnreadCount();
-  const upcomingHoliday = holidaysData[0];
+  const displayHoliday = upcomingHoliday || (holidaysData && holidaysData.length > 0 ? holidaysData[0] : null);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    refreshData();
-    setTimeout(() => setRefreshing(false), 300);
+    await refreshData();
+    setRefreshing(false);
   };
 
-  const handlePunchToggle = () => {
+  const handlePunchToggle = async () => {
     setPunchFeedback(null);
     if (!isCheckedIn) {
-      const res = punchIn();
+      const res = await punchIn();
       if (res.success && res.record) {
         setPunchFeedback(`Punched in at ${res.record.checkIn} (${res.record.statusLabel})`);
       } else {
@@ -63,18 +69,16 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
-  const handleConfirmPunchOut = () => {
+  const handleConfirmPunchOut = async () => {
     setIsPunchingOut(true);
-    setTimeout(() => {
-      const res = punchOut();
-      setIsPunchingOut(false);
-      setShowPunchOutModal(false);
-      if (res.success && res.record) {
-        setPunchFeedback(`Punched out at ${res.record.checkOut}`);
-      } else {
-        setPunchFeedback(res.error || 'Failed to punch out');
-      }
-    }, 350);
+    const res = await punchOut();
+    setIsPunchingOut(false);
+    setShowPunchOutModal(false);
+    if (res.success && res.record) {
+      setPunchFeedback(`Punched out at ${res.record.checkOut}`);
+    } else {
+      setPunchFeedback(res.error || 'Failed to punch out');
+    }
   };
 
   const getGreeting = () => {
@@ -154,7 +158,7 @@ export const HomeScreen: React.FC = () => {
             accessibilityLabel="Notifications"
           >
             <Ionicons name="notifications-outline" size={20} color="#0F172A" />
-            {unreadNotifsCount > 0 && (
+            {unreadNotificationsCount > 0 && (
               <View className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500 border border-white" />
             )}
           </TouchableOpacity>
@@ -360,7 +364,42 @@ export const HomeScreen: React.FC = () => {
               Overtime
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/salary' as any)}
+            activeOpacity={0.7}
+            className="flex-1 bg-white p-3 rounded-2xl border border-slate-200 items-center shadow-xs"
+          >
+            <View className="w-9 h-9 rounded-xl bg-blue-50 items-center justify-center mb-1">
+              <Ionicons name="calculator-outline" size={18} color="#2563EB" />
+            </View>
+            <Text className="text-xs font-bold text-slate-800 text-center">
+              Salary
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Salary & Deductions Protection Banner */}
+        <TouchableOpacity
+          onPress={() => router.push('/salary' as any)}
+          activeOpacity={0.8}
+          className="bg-slate-900 p-4 rounded-2xl mb-4 flex-row items-center justify-between"
+        >
+          <View className="flex-row items-center gap-3 flex-1">
+            <View className="w-10 h-10 rounded-xl bg-slate-800 items-center justify-center border border-slate-700">
+              <Ionicons name="shield-checkmark" size={20} color="#10B981" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-xs font-bold text-white">
+                Salary & Leave Protection
+              </Text>
+              <Text className="text-[11px] text-slate-400 mt-0.5">
+                Half-days auto-adjusted with leaves before salary deductions
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+        </TouchableOpacity>
 
 
         {/* Monthly Summary Statistics Grid */}
@@ -417,14 +456,14 @@ export const HomeScreen: React.FC = () => {
               <Ionicons name="time-outline" size={15} color="#2563EB" />
             </View>
             <Text className="text-2xl font-black text-blue-600">
-              {otSummary.totalApprovedHours}
+              {overtimeSummary.totalApprovedHours}
             </Text>
-            <Text className="text-[10px] text-slate-400">{otSummary.reimbursementPendingCount} pending payout</Text>
+            <Text className="text-[10px] text-slate-400">{overtimeSummary.reimbursementPendingCount} pending payout</Text>
           </Card>
         </View>
 
         {/* Upcoming Holiday Card */}
-        {upcomingHoliday && (
+        {displayHoliday && (
           <TouchableOpacity
             onPress={() => router.push('/holidays')}
             activeOpacity={0.8}
@@ -444,15 +483,15 @@ export const HomeScreen: React.FC = () => {
                   Upcoming Holiday • Tap to View All
                 </Text>
                 <Text className="text-sm font-bold text-white mt-0.5">
-                  {upcomingHoliday.name}
+                  {displayHoliday.name}
                 </Text>
                 <Text className="text-xs text-slate-400">
-                  {upcomingHoliday.date} ({upcomingHoliday.day})
+                  {displayHoliday.date} ({displayHoliday.day})
                 </Text>
               </View>
             </View>
             <View className="items-end gap-1">
-              <Badge label={upcomingHoliday.type} variant="info" size="sm" />
+              <Badge label={displayHoliday.type} variant="info" size="sm" />
               <View className="flex-row items-center gap-0.5 mt-0.5">
                 <Text className="text-[10px] text-blue-400 font-semibold">Calendar</Text>
                 <Ionicons name="chevron-forward" size={12} color="#60A5FA" />

@@ -7,6 +7,7 @@ export interface Employee {
   email: string; // Work email
   phone: string;
   avatarUrl?: string;
+  salary?: number;
   designation: string;
   joiningDate: string; // "YYYY-MM-DD"
   employmentType: 'Full-time' | 'Contract' | 'Part-time';

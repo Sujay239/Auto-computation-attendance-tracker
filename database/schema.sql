@@ -49,6 +49,7 @@ CREATE TABLE employees (
     password_hash VARCHAR(255) NOT NULL,
     phone VARCHAR(30) NOT NULL,
     avatar_url TEXT,
+    salary NUMERIC(12, 2) NOT NULL DEFAULT 0,
     designation VARCHAR(150) NOT NULL,
     joining_date DATE NOT NULL,
     employment_type VARCHAR(50) NOT NULL DEFAULT 'Full-time'

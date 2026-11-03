@@ -1,0 +1,422 @@
+{
+  "name": "Auto Computation - Salary Deductions & Leave Adjustment (Salary Deductions)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "salary-deductions",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "sald1a2b-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /salary-deductions",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "salary-deductions-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\n// 1. Extract Token from Authorization header (Bearer <token>) or body/query\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "sald1a2b-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "sald1a2b-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst callerId = String(claims.sub).trim();\nconst callerRole = String(claims.role || 'EMPLOYEE').toUpperCase().trim();\n\nconst webhookNode = $('Webhook - POST /salary-deductions').first().json || {};\nconst body = webhookNode.body || {};\n\nlet targetEmployeeId = callerId;\nif (callerRole === 'ADMIN' && body.employeeId) {\n  targetEmployeeId = String(body.employeeId).trim();\n}\n\nlet targetMonth = String(body.month || '').trim();\nif (!targetMonth || !/^\\d{4}-\\d{2}$/.test(targetMonth)) {\n  const now = new Date();\n  targetMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;\n}\n\nreturn [{\n  json: {\n    valid: true,\n    callerId: callerId,\n    callerRole: callerRole,\n    targetEmployeeId: targetEmployeeId,\n    targetMonth: targetMonth\n  }\n}];"
+      },
+      "id": "sald1a2b-0004-4000-8000-000000000004",
+      "name": "Code - Process Claims & Target Employee",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "sald1a2b-0005-4000-8000-000000000005",
+      "name": "If - Valid Auth?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH \nemp AS (\n  SELECT \n    id,\n    first_name,\n    last_name,\n    email,\n    phone,\n    avatar_url,\n    COALESCE(salary, 0)::FLOAT AS salary,\n    designation,\n    joining_date::TEXT,\n    employment_type,\n    work_location,\n    role\n  FROM employees\n  WHERE id = '{{ $json.targetEmployeeId }}'\n  LIMIT 1\n),\nleaves AS (\n  SELECT \n    leave_type AS \"type\",\n    label,\n    total::FLOAT,\n    used::FLOAT,\n    available::FLOAT,\n    year\n  FROM leave_balances\n  WHERE employee_id = '{{ $json.targetEmployeeId }}'\n    AND year = EXTRACT(YEAR FROM '{{ $json.targetMonth }}-01'::DATE)::INT\n),\nmonth_att AS (\n  SELECT \n    id,\n    date::TEXT,\n    check_in,\n    check_out,\n    status,\n    status_label,\n    late_allowance_used,\n    is_half_day_case,\n    half_day_reason,\n    notes,\n    work_duration_minutes\n  FROM attendances\n  WHERE employee_id = '{{ $json.targetEmployeeId }}'\n    AND TO_CHAR(date, 'YYYY-MM') = '{{ $json.targetMonth }}'\n  ORDER BY date ASC\n),\nhol AS (\n  SELECT \n    id,\n    name,\n    date::TEXT,\n    day,\n    type,\n    is_office_closed\n  FROM holidays\n  WHERE TO_CHAR(date, 'YYYY-MM') = '{{ $json.targetMonth }}'\n),\nleave_reqs AS (\n  SELECT \n    id,\n    leave_type,\n    duration_type,\n    start_date::TEXT,\n    end_date::TEXT,\n    days_count::FLOAT,\n    status,\n    comments\n  FROM leave_requests\n  WHERE employee_id = '{{ $json.targetEmployeeId }}'\n    AND (\n      TO_CHAR(start_date, 'YYYY-MM') = '{{ $json.targetMonth }}'\n      OR TO_CHAR(end_date, 'YYYY-MM') = '{{ $json.targetMonth }}'\n      OR id LIKE 'lev-adj-%'\n    )\n)\nSELECT \n  row_to_json(emp.*) AS employee,\n  (SELECT COALESCE(json_agg(l.*), '[]'::json) FROM leaves l) AS leave_balances,\n  (SELECT COALESCE(json_agg(a.*), '[]'::json) FROM month_att a) AS attendances,\n  (SELECT COALESCE(json_agg(h.*), '[]'::json) FROM hol h) AS holidays,\n  (SELECT COALESCE(json_agg(r.*), '[]'::json) FROM leave_reqs r) AS leave_requests\nFROM emp;",
+        "options": {}
+      },
+      "id": "sald1a2b-0006-4000-8000-000000000006",
+      "name": "Postgres - Fetch Salary, Attendances & Leave Balances",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        140
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputRow = $input.first().json || {};\nconst emp = inputRow.employee || {};\n\nif (!emp.id) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 404,\n      error: \"Employee record not found in database.\"\n    }\n  }];\n}\n\nconst targetInfo = $('Code - Process Claims & Target Employee').first().json || {};\nconst webhookBody = $('Webhook - POST /salary-deductions').first().json.body || {};\n\n// Salary is ALWAYS read from DB - never modified by this workflow\nconst salary = parseFloat(emp.salary || '0');\nconst monthKey = targetInfo.targetMonth;\nconst [yStr, mStr] = monthKey.split('-');\nconst year = parseInt(yStr, 10);\nconst month = parseInt(mStr, 10);\n\n// 1. Total calendar days in the month\nconst daysInMonth = new Date(year, month, 0).getDate();\n\n// 2. Exact user calculation rules:\n// dailySalary = floor(salary / daysInMonth)\nconst dailySalary = Math.floor(salary / daysInMonth);\n// halfDaySalary = floor(dailySalary / 2)\nconst halfDaySalary = Math.floor(dailySalary / 2);\n// full day leave deduction rate = 2 * halfDaySalary\nconst fullDayDeductionRate = 2 * halfDaySalary;\n\n// 3. Holidays mapping\nconst holidaysMap = {};\nfor (const h of (inputRow.holidays || [])) {\n  holidaysMap[h.date] = h;\n}\n\n// 4. Attendances mapping\nconst attendancesMap = {};\nfor (const a of (inputRow.attendances || [])) {\n  attendancesMap[a.date] = a;\n}\n\n// 5. Existing adjustment leave requests mapping (so we NEVER double deduct!)\nconst existingAdjustments = {};\nfor (const r of (inputRow.leave_requests || [])) {\n  if (r.id && r.id.startsWith('lev-adj-')) {\n    existingAdjustments[r.id] = r;\n  }\n}\n\n// 6. Initial Leave balances tracking\nconst leaveBalances = Array.isArray(inputRow.leave_balances) ? inputRow.leave_balances : [];\nconst initialBalances = {\n  HALF_DAY: 6.0,\n  CASUAL: 12.0,\n  SICK: 12.0,\n  EARNED: 15.0\n};\nconst liveBalances = {\n  HALF_DAY: 6.0,\n  CASUAL: 12.0,\n  SICK: 12.0,\n  EARNED: 15.0\n};\n\nfor (const b of leaveBalances) {\n  const avail = parseFloat(b.available || '0');\n  initialBalances[b.type] = avail;\n  liveBalances[b.type] = avail;\n}\n\nconst incidents = [];\nlet halfDaysAdjustedCount = 0;\nlet halfDaysDeductedCount = 0;\nlet fullDaysAdjustedCount = 0;\nlet fullDaysDeductedCount = 0;\nlet totalDeductionAmount = 0;\nlet totalWorkingDays = 0;\n\nconst sqlStatements = [];\n\n// employees.salary is READ-ONLY - never updated by this workflow\n\n// 7. Scan month calendar chronologically\nfor (let day = 1; day <= daysInMonth; day++) {\n  const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;\n  const dateObj = new Date(year, month - 1, day);\n  const dayOfWeek = dateObj.getDay();\n\n  const isSunday = (dayOfWeek === 0);\n  const isHoliday = !!holidaysMap[dayStr];\n\n  if (!isSunday && !isHoliday) {\n    totalWorkingDays++;\n  }\n\n  const att = attendancesMap[dayStr];\n  if (att) {\n    const adjLeaveId = `lev-adj-${att.id}`;\n    const notifId = `notif-adj-${att.id}`;\n    const alreadyAdjustedInDb = !!existingAdjustments[adjLeaveId];\n\n    // Case A: Half-day penalty (late past 10:45 AM cutoff or exceeded 3 monthly allowances)\n    if (att.is_half_day_case === true || att.status === 'HALF_DAY') {\n      const checkInTime = att.check_in || 'Late Punch';\n\n      if (alreadyAdjustedInDb) {\n        // Already recorded & deducted in database previously\n        halfDaysAdjustedCount++;\n        const prevReq = existingAdjustments[adjLeaveId];\n        const adjType = prevReq.leave_type || 'HALF_DAY';\n        incidents.push({\n          id: `inc-${dayStr}-half`,\n          date: dayStr,\n          incidentType: 'LATE_PAST_CUTOFF',\n          title: `Late Arrival: ${checkInTime}`,\n          type: 'HALF_DAY',\n          penaltyUnits: 0.5,\n          status: 'ADJUSTED_WITH_LEAVE',\n          adjustedLeaveType: adjType,\n          leaveDaysDeducted: 0.5,\n          deductionAmount: 0,\n          description: `Adjusted against ${adjType} Leave balance in database. No salary deducted.`,\n          checkInTime: att.check_in\n        });\n      } else {\n        // Priority 1: Check HALF_DAY leave balance\n        if (liveBalances['HALF_DAY'] >= 0.5) {\n          liveBalances['HALF_DAY'] -= 0.5;\n          halfDaysAdjustedCount++;\n\n          // Generate DB Update Statements\n          sqlStatements.push(`\n            UPDATE leave_balances\n            SET used = used + 0.5\n            WHERE employee_id = '${emp.id}'\n              AND leave_type = 'HALF_DAY'\n              AND year = ${year};\n\n            INSERT INTO leave_requests (\n              id, employee_id, leave_type, duration_type,\n              start_date, end_date, days_count, reason,\n              status, applied_on, approved_or_rejected_by,\n              reviewed_on, comments, whatsapp_notice_acknowledged\n            ) VALUES (\n              '${adjLeaveId}',\n              '${emp.id}',\n              'HALF_DAY',\n              'FIRST_HALF',\n              '${dayStr}'::DATE,\n              '${dayStr}'::DATE,\n              0.5,\n              'Auto-adjustment for late arrival past cutoff (0.5 day)',\n              'APPROVED',\n              CURRENT_DATE,\n              'SYSTEM_SALARY_PROTECTION',\n              CURRENT_DATE,\n              'Auto-adjusted from Half-Day Leave balance to protect monthly salary from deductions.',\n              TRUE\n            ) ON CONFLICT (id) DO NOTHING;\n\n            UPDATE attendances\n            SET \n              notes = 'LEAVE_ADJUSTED:HALF_DAY:0.5',\n              status_label = 'Half Day (Leave Protected)'\n            WHERE id = '${att.id}';\n\n            INSERT INTO notifications (\n              id, employee_id, category, title, message, action_route, priority, is_read\n            ) VALUES (\n              '${notifId}',\n              '${emp.id}',\n              'LEAVE_UPDATE',\n              'Salary Protected by Leave Balance',\n              'Your late arrival on ${dayStr} was automatically adjusted against 0.5 Half-Day Leave. Zero salary deducted.',\n              '/salary',\n              'NORMAL',\n              FALSE\n            ) ON CONFLICT (id) DO NOTHING;\n          `);\n\n          incidents.push({\n            id: `inc-${dayStr}-half`,\n            date: dayStr,\n            incidentType: 'LATE_PAST_CUTOFF',\n            title: `Late Arrival: ${checkInTime}`,\n            type: 'HALF_DAY',\n            penaltyUnits: 0.5,\n            status: 'ADJUSTED_WITH_LEAVE',\n            adjustedLeaveType: 'HALF_DAY',\n            leaveDaysDeducted: 0.5,\n            deductionAmount: 0,\n            description: `Adjusted against available Half-Day Leave (0.5 day). Remaining Half-Day balance: ${liveBalances['HALF_DAY']}. Database updated. No salary deducted.`,\n            checkInTime: att.check_in\n          });\n        } else if (liveBalances['CASUAL'] >= 0.5) {\n          // Priority 2: Check CASUAL leave balance\n          liveBalances['CASUAL'] -= 0.5;\n          halfDaysAdjustedCount++;\n\n          sqlStatements.push(`\n            UPDATE leave_balances\n            SET used = used + 0.5\n            WHERE employee_id = '${emp.id}'\n              AND leave_type = 'CASUAL'\n              AND year = ${year};\n\n            INSERT INTO leave_requests (\n              id, employee_id, leave_type, duration_type,\n              start_date, end_date, days_count, reason,\n              status, applied_on, approved_or_rejected_by,\n              reviewed_on, comments, whatsapp_notice_acknowledged\n            ) VALUES (\n              '${adjLeaveId}',\n              '${emp.id}',\n              'CASUAL',\n              'FIRST_HALF',\n              '${dayStr}'::DATE,\n              '${dayStr}'::DATE,\n              0.5,\n              'Auto-adjustment for late arrival past cutoff (0.5 day Casual Leave)',\n              'APPROVED',\n              CURRENT_DATE,\n              'SYSTEM_SALARY_PROTECTION',\n              CURRENT_DATE,\n              'Half-Day balance was 0. Auto-adjusted from Casual Leave balance to protect monthly salary.',\n              TRUE\n            ) ON CONFLICT (id) DO NOTHING;\n\n            UPDATE attendances\n            SET \n              notes = 'LEAVE_ADJUSTED:CASUAL:0.5',\n              status_label = 'Half Day (Casual Leave Protected)'\n            WHERE id = '${att.id}';\n\n            INSERT INTO notifications (\n              id, employee_id, category, title, message, action_route, priority, is_read\n            ) VALUES (\n              '${notifId}',\n              '${emp.id}',\n              'LEAVE_UPDATE',\n              'Salary Protected by Casual Leave',\n              'Your late arrival on ${dayStr} was automatically adjusted against 0.5 Casual Leave. Zero salary deducted.',\n              '/salary',\n              'NORMAL',\n              FALSE\n            ) ON CONFLICT (id) DO NOTHING;\n          `);\n\n          incidents.push({\n            id: `inc-${dayStr}-half`,\n            date: dayStr,\n            incidentType: 'LATE_PAST_CUTOFF',\n            title: `Late Arrival: ${checkInTime}`,\n            type: 'HALF_DAY',\n            penaltyUnits: 0.5,\n            status: 'ADJUSTED_WITH_LEAVE',\n            adjustedLeaveType: 'CASUAL',\n            leaveDaysDeducted: 0.5,\n            deductionAmount: 0,\n            description: `Half-Day balance was 0. Adjusted against Casual Leave (0.5 day). Remaining Casual balance: ${liveBalances['CASUAL']}. Database updated. No salary deducted.`,\n            checkInTime: att.check_in\n          });\n        } else {\n          // Priority 3: Leaves exhausted (0 balance) -> Deduct half-day salary\n          halfDaysDeductedCount++;\n          totalDeductionAmount += halfDaySalary;\n\n          sqlStatements.push(`\n            UPDATE attendances\n            SET \n              notes = 'SALARY_DEDUCTED:HALF_DAY:${halfDaySalary}',\n              status_label = 'Half Day (Salary Deducted)'\n            WHERE id = '${att.id}';\n          `);\n\n          incidents.push({\n            id: `inc-${dayStr}-half`,\n            date: dayStr,\n            incidentType: 'LATE_PAST_CUTOFF',\n            title: `Late Arrival: ${checkInTime}`,\n            type: 'HALF_DAY',\n            penaltyUnits: 0.5,\n            status: 'SALARY_DEDUCTED',\n            adjustedLeaveType: null,\n            leaveDaysDeducted: 0,\n            deductionAmount: halfDaySalary,\n            description: `All eligible leave balances exhausted (0 remaining). Deducted half-day salary: ₹${halfDaySalary}.`,\n            checkInTime: att.check_in\n          });\n        }\n      }\n    }\n  }\n}\n\nconst projectedNetSalary = Math.max(0, salary - totalDeductionAmount);\nconst monthNames = [\n  'January', 'February', 'March', 'April', 'May', 'June',\n  'July', 'August', 'September', 'October', 'November', 'December'\n];\nconst monthName = `${monthNames[month - 1]} ${year}`;\n\nconst balanceSummary = [\n  {\n    type: 'HALF_DAY',\n    label: 'Half-Day Leave',\n    initialAvailable: initialBalances['HALF_DAY'],\n    usedForSalaryAdjustment: initialBalances['HALF_DAY'] - liveBalances['HALF_DAY'],\n    currentAvailable: liveBalances['HALF_DAY']\n  },\n  {\n    type: 'CASUAL',\n    label: 'Casual Leave',\n    initialAvailable: initialBalances['CASUAL'],\n    usedForSalaryAdjustment: initialBalances['CASUAL'] - liveBalances['CASUAL'],\n    currentAvailable: liveBalances['CASUAL']\n  },\n  {\n    type: 'SICK',\n    label: 'Sick Leave',\n    initialAvailable: initialBalances['SICK'],\n    usedForSalaryAdjustment: 0,\n    currentAvailable: liveBalances['SICK']\n  },\n  {\n    type: 'EARNED',\n    label: 'Earned Leave',\n    initialAvailable: initialBalances['EARNED'],\n    usedForSalaryAdjustment: 0,\n    currentAvailable: liveBalances['EARNED']\n  }\n];\n\nconst hasUpdates = sqlStatements.length > 0;\nconst combinedSql = sqlStatements.join('\\n');\n\nreturn [{\n  json: {\n    valid: true,\n    hasUpdates: hasUpdates,\n    sqlUpdates: combinedSql,\n    breakdown: {\n      monthKey: monthKey,\n      monthName: monthName,\n      daysInMonth: daysInMonth,\n      monthlySalary: salary,\n      dailySalary: dailySalary,\n      halfDaySalary: halfDaySalary,\n      fullDayDeductionRate: fullDayDeductionRate,\n      totalDeductionAmount: totalDeductionAmount,\n      projectedNetSalary: projectedNetSalary,\n      totalWorkingDays: totalWorkingDays,\n      totalIncidents: incidents.length,\n      halfDaysAdjustedCount: halfDaysAdjustedCount,\n      halfDaysDeductedCount: halfDaysDeductedCount,\n      fullDaysAdjustedCount: fullDaysAdjustedCount,\n      fullDaysDeductedCount: fullDaysDeductedCount,\n      totalLeaveDaysConsumed: (halfDaysAdjustedCount * 0.5) + fullDaysAdjustedCount,\n      incidents: incidents,\n      leaveBalances: balanceSummary\n    }\n  }\n}];"
+      },
+      "id": "sald1a2b-0007-4000-8000-000000000007",
+      "name": "Code - Compute Adjustments & Prepare DB Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasUpdates }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "sald1a2b-0008-4000-8000-000000000008",
+      "name": "If - Has DB Updates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sqlUpdates }}",
+        "options": {}
+      },
+      "id": "sald1a2b-0009-4000-8000-000000000009",
+      "name": "Postgres - Persist Leave Adjustments & Notifications in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2140,
+        60
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const prev = $('Code - Compute Adjustments & Prepare DB Updates').first().json || {};\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    breakdown: prev.breakdown\n  }\n}];"
+      },
+      "id": "sald1a2b-0010-4000-8000-000000000010",
+      "name": "Code - Finalize Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sald1a2b-0011-4000-8000-000000000011",
+      "name": "Respond 200 - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2580,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Salary calculation failed.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "sald1a2b-0012-4000-8000-000000000012",
+      "name": "Respond Error - 400/401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        340
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /salary-deductions": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Process Claims & Target Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Process Claims & Target Employee": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Auth?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Auth?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Fetch Salary, Attendances & Leave Balances",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Fetch Salary, Attendances & Leave Balances": {
+      "main": [
+        [
+          {
+            "node": "Code - Compute Adjustments & Prepare DB Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Compute Adjustments & Prepare DB Updates": {
+      "main": [
+        [
+          {
+            "node": "If - Has DB Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has DB Updates?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Persist Leave Adjustments & Notifications in DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Persist Leave Adjustments & Notifications in DB": {
+      "main": [
+        [
+          {
+            "node": "Code - Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Finalize Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Salary Deductions"
+    },
+    {
+      "name": "Leave Adjustment"
+    },
+    {
+      "name": "DB Persistence"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

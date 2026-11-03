@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
+import { Avatar } from '../../components/common/Avatar';
 
 export const PersonalInformationScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -31,23 +32,21 @@ export const PersonalInformationScreen: React.FC = () => {
       >
         {/* Profile Card */}
         <Card className="mb-4 flex-row items-center gap-4">
-          <Image
-            source={{
-              uri:
-                user?.avatarUrl ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
-            }}
-            className="w-16 h-16 rounded-full border-2 border-slate-200"
+          <Avatar
+            uri={user?.avatarUrl}
+            name={user ? `${user.firstName} ${user.lastName}` : 'Rahul Sharma'}
+            size={64}
+            showStatusDot
           />
           <View className="flex-1">
             <Text className="text-lg font-black text-slate-900">
-              {user ? `${user.firstName} ${user.lastName}` : 'Sujay Verma'}
+              {user ? `${user.firstName} ${user.lastName}` : 'Rahul Sharma'}
             </Text>
             <Text className="text-xs text-blue-600 font-bold">
-              {user?.id || 'EMP-024'}
+              {user?.id || 'EMP-022'}
             </Text>
             <Text className="text-[11px] text-slate-500 mt-0.5">
-              {user?.designation || 'Senior Full Stack Engineer'}
+              {user?.designation || 'Frontend Developer'}
             </Text>
           </View>
         </Card>

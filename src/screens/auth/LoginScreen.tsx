@@ -20,8 +20,8 @@ export const LoginScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
 
-  const [identifier, setIdentifier] = useState('sujay.verma@company.com');
-  const [password, setPassword] = useState('password123');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,12 +50,6 @@ export const LoginScreen: React.FC = () => {
     } else {
       setError(result.error || 'Authentication failed. Please verify your credentials.');
     }
-  };
-
-  const handleQuickDemoFill = (id: string, pass: string) => {
-    setIdentifier(id);
-    setPassword(pass);
-    setError(null);
   };
 
   return (
@@ -199,43 +193,6 @@ export const LoginScreen: React.FC = () => {
                 icon={<Ionicons name="log-in-outline" size={20} color="#ffffff" />}
               />
             </View>
-
-            {/* Quick Demo Autofill Card */}
-            <TouchableOpacity
-              onPress={() => handleQuickDemoFill('sujay.verma@company.com', 'password123')}
-              activeOpacity={0.8}
-              style={{
-                backgroundColor: '#EFF6FF',
-                borderColor: '#BFDBFE',
-                borderWidth: 1,
-                borderRadius: 16,
-                padding: 13,
-              }}
-              className="flex-row items-center justify-between mb-3"
-            >
-              <View className="flex-row items-center gap-3">
-                <View className="w-8 h-8 rounded-xl bg-blue-600 items-center justify-center">
-                  <Ionicons name="key" size={16} color="#ffffff" />
-                </View>
-                <View>
-                  <View className="flex-row items-center gap-1.5">
-                    <Text className="text-xs font-bold text-blue-950">
-                      Sujay Verma
-                    </Text>
-                    <Text className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
-                      EMP-024
-                    </Text>
-                  </View>
-                  <Text className="text-[11px] text-blue-800 mt-0.5">
-                    sujay.verma@company.com
-                  </Text>
-                </View>
-              </View>
-
-              <View className="bg-blue-600 px-3 py-1.5 rounded-lg shadow-2xs">
-                <Text className="text-[10px] font-bold text-white">Fill Demo</Text>
-              </View>
-            </TouchableOpacity>
 
             {/* Security Notice */}
             <View className="items-center pt-2">

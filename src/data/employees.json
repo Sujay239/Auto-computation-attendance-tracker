@@ -1,19 +1,4 @@
 {
-  "currentEmployeeId": "EMP-024",
-  "demoCredentials": [
-    {
-      "identifier": "sujay.verma@company.com",
-      "employeeId": "EMP-024",
-      "password": "password123",
-      "role": "EMPLOYEE"
-    },
-    {
-      "identifier": "EMP-024",
-      "employeeId": "EMP-024",
-      "password": "password123",
-      "role": "EMPLOYEE"
-    }
-  ],
   "employees": [
     {
       "id": "EMP-024",

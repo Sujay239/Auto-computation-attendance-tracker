@@ -1,0 +1,319 @@
+{
+  "name": "Auto Computation - Leave Application (Apply Leave)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leave-apply",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "lev1a2b3-0001-4000-8000-000000000001",
+      "name": "Webhook - POST /leave-apply",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "webhookId": "leave-apply-webhook"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const req = $input.first().json || {};\nconst headers = req.headers || {};\nconst body = req.body || {};\nconst query = req.query || {};\n\n// 1. Extract Token from Authorization header (Bearer <token>) or body/query\nlet rawHeader = headers['authorization'] || headers['Authorization'] || '';\nlet token = '';\n\nif (typeof rawHeader === 'string' && rawHeader.toLowerCase().startsWith('bearer ')) {\n  token = rawHeader.substring(7).trim();\n} else if (typeof rawHeader === 'string' && rawHeader.trim().length > 0 && !rawHeader.includes(' ')) {\n  token = rawHeader.trim();\n} else if (body.token) {\n  token = String(body.token).trim();\n} else if (query.token) {\n  token = String(query.token).trim();\n}\n\nif (!token) {\n  return [{\n    json: {\n      hasToken: false,\n      statusCode: 401,\n      error: \"Access denied. Authentication token required. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    hasToken: true,\n    token: token\n  }\n}];"
+      },
+      "id": "lev1a2b3-0002-4000-8000-000000000002",
+      "name": "Code - Extract Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasToken }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "lev1a2b3-0003-4000-8000-000000000003",
+      "name": "If - Has Token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "decode",
+        "token": "={{ $json.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        820,
+        200
+      ],
+      "id": "4ad559f1-3218-4be3-af97-5c10a3312378",
+      "name": "JWT",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "XMvqVX3BtA2Ba0J0",
+          "name": "JWT Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst employeeId = String(claims.sub).trim();\nconst webhookNode = $('Webhook - POST /leave-apply').first().json || {};\nconst body = webhookNode.body || {};\n\nconst leaveType = (body.leaveType || 'CASUAL').toUpperCase().trim();\nconst validTypes = ['CASUAL', 'SICK', 'EARNED', 'HALF_DAY'];\nif (!validTypes.includes(leaveType)) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 400,\n      error: `Invalid leave type '${leaveType}'. Allowed: CASUAL, SICK, EARNED, HALF_DAY.`\n    }\n  }];\n}\n\nconst durationType = (body.durationType || 'FULL_DAY').toUpperCase().trim();\nconst validDurations = ['FULL_DAY', 'FIRST_HALF', 'SECOND_HALF'];\nif (!validDurations.includes(durationType)) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 400,\n      error: `Invalid duration type '${durationType}'. Allowed: FULL_DAY, FIRST_HALF, SECOND_HALF.`\n    }\n  }];\n}\n\nconst startDate = String(body.startDate || '').trim();\nif (!startDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate)) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 400,\n      error: \"Start date is required in YYYY-MM-DD format.\"\n    }\n  }];\n}\n\nlet effectiveEndDate = startDate;\nlet daysCount = 1;\n\nif (durationType === 'FIRST_HALF' || durationType === 'SECOND_HALF') {\n  daysCount = 0.5;\n  effectiveEndDate = startDate;\n} else {\n  const rawEnd = String(body.endDate || '').trim();\n  effectiveEndDate = (rawEnd && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawEnd)) ? rawEnd : startDate;\n  if (effectiveEndDate < startDate) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"End date cannot be earlier than start date.\"\n      }\n    }];\n  }\n  const d1 = new Date(startDate);\n  const d2 = new Date(effectiveEndDate);\n  const diffDays = Math.ceil(Math.abs(d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1;\n  daysCount = Math.max(1, diffDays);\n}\n\nconst reason = String(body.reason || '').trim();\nif (!reason) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 400,\n      error: \"Please provide a reason for the leave request.\"\n    }\n  }];\n}\n\nconst ackWhatsapp = body.whatsappNoticeAcknowledged !== false;\nconst leaveId = `lev-${Date.now()}-${employeeId}`;\nconst notifId = `notif-${Date.now()}-${employeeId}`;\n\nreturn [{\n  json: {\n    valid: true,\n    employeeId: employeeId,\n    leaveId: leaveId,\n    notifId: notifId,\n    leaveType: leaveType,\n    durationType: durationType,\n    startDate: startDate,\n    effectiveEndDate: effectiveEndDate,\n    daysCount: daysCount,\n    reason: reason,\n    escapedReason: reason.replace(/'/g, \"''\"),\n    whatsappNoticeAcknowledged: ackWhatsapp\n  }\n}];"
+      },
+      "id": "lev1a2b3-0004-4000-8000-000000000004",
+      "name": "Code - Validate Leave Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "lev1a2b3-0005-4000-8000-000000000005",
+      "name": "If - Valid Leave Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH \nbal AS (\n  SELECT total, used, available\n  FROM leave_balances\n  WHERE employee_id = '{{ $json.employeeId }}'\n    AND leave_type = '{{ $json.leaveType }}'\n    AND year = EXTRACT(YEAR FROM '{{ $json.startDate }}'::DATE)::INT\n  LIMIT 1\n),\nins AS (\n  INSERT INTO leave_requests (\n    id, employee_id, leave_type, duration_type,\n    start_date, end_date, days_count, reason,\n    status, applied_on, whatsapp_notice_acknowledged,\n    comments\n  ) VALUES (\n    '{{ $json.leaveId }}',\n    '{{ $json.employeeId }}',\n    '{{ $json.leaveType }}',\n    '{{ $json.durationType }}',\n    '{{ $json.startDate }}'::DATE,\n    '{{ $json.effectiveEndDate }}'::DATE,\n    {{ $json.daysCount }},\n    '{{ $json.escapedReason }}',\n    'PENDING',\n    CURRENT_DATE,\n    {{ $json.whatsappNoticeAcknowledged ? 'TRUE' : 'FALSE' }},\n    'Pending management approval and official WhatsApp group validation.'\n  )\n  RETURNING \n    id, employee_id, leave_type, duration_type,\n    start_date::TEXT, end_date::TEXT, days_count, reason,\n    status, applied_on::TEXT, whatsapp_notice_acknowledged,\n    comments, created_at::TEXT\n),\nnotif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  ) VALUES (\n    '{{ $json.notifId }}',\n    '{{ $json.employeeId }}',\n    'LEAVE_UPDATE',\n    'Leave Request Submitted',\n    'Your request for {{ $json.daysCount }} day(s) {{ $json.leaveType }} leave ({{ $json.startDate }} to {{ $json.effectiveEndDate }}) has been submitted for approval.',\n    '/(tabs)/leave',\n    'NORMAL',\n    FALSE\n  )\n  RETURNING id\n)\nSELECT \n  row_to_json(ins.*) AS leave_request,\n  row_to_json(bal.*) AS current_balance\nFROM ins\nLEFT JOIN bal ON true;",
+        "options": {}
+      },
+      "id": "lev1a2b3-0006-4000-8000-000000000006",
+      "name": "Postgres - Insert Leave Request & Notify",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1480,
+        100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "postgres": {
+          "id": "postgres_credentials_placeholder",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst req = data.leave_request || {};\nconst bal = data.current_balance || {};\n\nif (!req.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 500,\n      error: \"Failed to record leave request in database.\"\n    }\n  }];\n}\n\nconst avail = parseFloat(bal.available || '0');\nconst requested = parseFloat(req.days_count || '0');\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: \"Leave request submitted successfully. Pending admin review and WhatsApp notice.\",\n    request: {\n      id: req.id,\n      employeeId: req.employee_id,\n      leaveType: req.leave_type,\n      durationType: req.duration_type,\n      startDate: req.start_date,\n      endDate: req.end_date,\n      daysCount: requested,\n      reason: req.reason,\n      status: req.status || 'PENDING',\n      appliedOn: req.applied_on,\n      whatsappNoticeAcknowledged: req.whatsapp_notice_acknowledged,\n      comments: req.comments,\n      createdAt: req.created_at\n    },\n    balance: {\n      leaveType: req.leave_type,\n      total: parseFloat(bal.total || '0'),\n      used: parseFloat(bal.used || '0'),\n      available: avail,\n      projectedRemaining: Math.max(0, avail - requested)\n    }\n  }\n}];"
+      },
+      "id": "lev1a2b3-0007-4000-8000-000000000007",
+      "name": "Code - Format Leave Application Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lev1a2b3-0008-4000-8000-000000000008",
+      "name": "Respond 200 - Leave Applied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Leave request validation failed.\"\n}) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lev1a2b3-0009-4000-8000-000000000009",
+      "name": "Respond Error - 400/401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1260,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - POST /leave-apply": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Token": {
+      "main": [
+        [
+          {
+            "node": "If - Has Token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Token?": {
+      "main": [
+        [
+          {
+            "node": "JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JWT": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Leave Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Validate Leave Parameters": {
+      "main": [
+        [
+          {
+            "node": "If - Valid Leave Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Valid Leave Request?": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Insert Leave Request & Notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Insert Leave Request & Notify": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Leave Application Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Leave Application Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Leave Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "Auto Computation"
+    },
+    {
+      "name": "Leave Application"
+    },
+    {
+      "name": "JWT Security"
+    }
+  ]
+}

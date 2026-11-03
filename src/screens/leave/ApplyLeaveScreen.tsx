@@ -23,17 +23,18 @@ export const ApplyLeaveScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
+  const todayStr = new Date().toISOString().split('T')[0];
   const [leaveType, setLeaveType] = useState<LeaveType>('CASUAL');
   const [durationType, setDurationType] = useState<LeaveDurationType>('FULL_DAY');
-  const [startDate, setStartDate] = useState('2026-11-15');
-  const [endDate, setEndDate] = useState('2026-11-16');
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
   const [reason, setReason] = useState('');
   const [ackWhatsapp, setAckWhatsapp] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError(null);
     if (!reason.trim()) {
       setError('Please provide a reason for requesting this leave.');
@@ -45,9 +46,9 @@ export const ApplyLeaveScreen: React.FC = () => {
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const res = leaveService.applyLeave({
-        employeeId: user?.id || 'EMP-024',
+    try {
+      const res = await leaveService.applyLeaveOnline({
+        employeeId: user?.id || 'EMP-022',
         leaveType,
         durationType,
         startDate,
@@ -62,7 +63,10 @@ export const ApplyLeaveScreen: React.FC = () => {
       } else {
         setError(res.error || 'Failed to submit leave request');
       }
-    }, 400);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err.message || 'An unexpected error occurred.');
+    }
   };
 
   if (isSubmitted) {
