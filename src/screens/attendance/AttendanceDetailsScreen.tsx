@@ -28,6 +28,19 @@ export const AttendanceDetailsScreen: React.FC = () => {
     );
   }
 
+  const isLeaveOrAbsenceOrHalfDay =
+    record.status === 'ON_LEAVE' ||
+    record.status === 'LEAVE' ||
+    record.status === 'ABSENT' ||
+    record.status === 'HALF_DAY' ||
+    record.leaveDeduction !== undefined ||
+    record.salaryDeduction !== undefined;
+
+  const isApprovedLeave = record.isApprovedLeave || record.status === 'ON_LEAVE' || record.status === 'LEAVE';
+  const isUnapprovedAbsence = record.status === 'ABSENT' && !record.isApprovedLeave;
+  const leaveDeductionDays = record.leaveDeduction ?? (isApprovedLeave ? 1 : 0);
+  const salaryDeductionAmount = record.salaryDeduction ?? 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
@@ -61,6 +74,10 @@ export const AttendanceDetailsScreen: React.FC = () => {
                   ? 'warning'
                   : record.status === 'HALF_DAY'
                   ? 'danger'
+                  : record.status === 'ON_LEAVE' || record.status === 'LEAVE'
+                  ? 'neutral'
+                  : record.status === 'ABSENT'
+                  ? 'danger'
                   : 'neutral'
               }
             />
@@ -82,6 +99,62 @@ export const AttendanceDetailsScreen: React.FC = () => {
             </View>
           )}
         </Card>
+
+        {/* Section 8B: Absence & Leave Deduction Details */}
+        {isLeaveOrAbsenceOrHalfDay && (
+          <Card className="mb-4 bg-slate-50/80 border-slate-200">
+            <View className="flex-row items-center gap-2 mb-2.5">
+              <Ionicons
+                name={isApprovedLeave ? 'shield-checkmark' : 'alert-circle'}
+                size={18}
+                color={isApprovedLeave ? '#059669' : '#DC2626'}
+              />
+              <Text className="text-xs uppercase font-bold text-slate-800">
+                Leave & Salary Deduction Audit
+              </Text>
+            </View>
+
+            <View className="space-y-2">
+              <View className="flex-row justify-between py-1.5 border-b border-slate-200/60">
+                <Text className="text-xs text-slate-500 font-medium">Policy Classification:</Text>
+                <Text className="text-xs font-bold text-slate-900">
+                  {isApprovedLeave
+                    ? 'Approved Leave'
+                    : isUnapprovedAbsence
+                    ? 'Unapproved Absence'
+                    : 'Late / Half-Day Penalty'}
+                </Text>
+              </View>
+
+              <View className="flex-row justify-between py-1.5 border-b border-slate-200/60">
+                <Text className="text-xs text-slate-500 font-medium">Leave Balance Utilized:</Text>
+                <Text className="text-xs font-bold text-emerald-700">
+                  {leaveDeductionDays > 0 ? `${leaveDeductionDays} Day(s) Consumed` : 'None (0 Days)'}
+                </Text>
+              </View>
+
+              <View className="flex-row justify-between py-1.5 border-b border-slate-200/60">
+                <Text className="text-xs text-slate-500 font-medium">Salary Deduction:</Text>
+                <Text
+                  className={`text-xs font-black ${
+                    salaryDeductionAmount > 0 ? 'text-rose-600' : 'text-emerald-700'
+                  }`}
+                >
+                  {salaryDeductionAmount > 0
+                    ? `Deducted: ₹${salaryDeductionAmount.toLocaleString()}`
+                    : '₹0.00 (Protected by Leave)'}
+                </Text>
+              </View>
+
+              {record.leaveRequestId && (
+                <View className="flex-row justify-between py-1.5">
+                  <Text className="text-xs text-slate-500 font-medium">Leave Request Ref:</Text>
+                  <Text className="text-xs font-bold text-blue-600">{record.leaveRequestId}</Text>
+                </View>
+              )}
+            </View>
+          </Card>
+        )}
 
         {/* Duration Breakdown Card */}
         <Card className="mb-4">

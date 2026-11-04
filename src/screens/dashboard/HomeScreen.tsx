@@ -20,6 +20,7 @@ import { Avatar } from '../../components/common/Avatar';
 import { leaveService } from '../../services/leaveService';
 import { overtimeService } from '../../services/overtimeService';
 import { notificationService } from '../../services/notificationService';
+import { payrollCalculationEngine } from '../../services/payrollCalculationEngine';
 import { PunchOutModal } from '../../components/attendance/PunchOutModal';
 
 export const HomeScreen: React.FC = () => {
@@ -50,6 +51,19 @@ export const HomeScreen: React.FC = () => {
   const displayHoliday = upcomingHoliday || null;
   const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const isPast230PM = currentMinutes >= 870;
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const currentTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const leaveCheck = payrollCalculationEngine.canEmployeeCheckIn(
+    todayStr,
+    currentTimeStr,
+    leaveService.getRequests()
+  );
+  const isFullDayLeave = !leaveCheck.allowed && leaveCheck.leaveType === 'FULL_DAY';
+  const isHalfDayLeaveBlocked =
+    !leaveCheck.allowed &&
+    (leaveCheck.leaveType === 'FIRST_HALF' || leaveCheck.leaveType === 'SECOND_HALF');
   const isAbsentCase = todayRecord?.status === 'ABSENT' || (!isCheckedIn && !isCheckedOut && isPast230PM);
 
   const handleRefresh = async () => {
@@ -61,6 +75,14 @@ export const HomeScreen: React.FC = () => {
   const handlePunchToggle = async () => {
     setPunchFeedback(null);
     if (!isCheckedIn) {
+      if (isFullDayLeave) {
+        setPunchFeedback(leaveCheck.reason || 'Check-in is disabled because you have approved full-day leave today.');
+        return;
+      }
+      if (isHalfDayLeaveBlocked) {
+        setPunchFeedback(leaveCheck.reason || 'Punch-in is restricted during approved half-day leave window.');
+        return;
+      }
       if (isPast230PM) {
         setPunchFeedback('Punch-in closed after 2:30 PM. You have been directly marked as Absent for today.');
         return;
@@ -239,7 +261,7 @@ export const HomeScreen: React.FC = () => {
 
             <View className="shrink-0">
               <Badge
-                label={todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed)' : 'Awaiting Punch')}
+                label={isFullDayLeave ? 'On Approved Leave' : todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed)' : 'Awaiting Punch')}
                 variant={
                   todayRecord?.status === 'ON_TIME'
                     ? 'success'
@@ -308,7 +330,37 @@ export const HomeScreen: React.FC = () => {
           </View>
 
           {/* Punch Action Button */}
-          {isAbsentCase && !isCheckedIn ? (
+          {isFullDayLeave ? (
+            <View className="bg-indigo-50 p-3.5 rounded-2xl flex-row items-center justify-between border border-indigo-200">
+              <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                <Ionicons name="calendar" size={22} color="#4F46E5" />
+                <View className="flex-1">
+                  <Text className="text-xs font-bold text-indigo-950">
+                    On Approved Full-Day Leave
+                  </Text>
+                  <Text className="text-[11px] text-indigo-700 mt-0.5 leading-tight">
+                    Attendance check-in is disabled. Today is scheduled as approved leave.
+                  </Text>
+                </View>
+              </View>
+              <Badge label="ON LEAVE" variant="neutral" size="sm" />
+            </View>
+          ) : isHalfDayLeaveBlocked ? (
+            <View className="bg-indigo-50 p-3.5 rounded-2xl flex-row items-center justify-between border border-indigo-200">
+              <View className="flex-row items-center gap-2.5 flex-1 pr-2">
+                <Ionicons name="time" size={22} color="#4F46E5" />
+                <View className="flex-1">
+                  <Text className="text-xs font-bold text-indigo-950">
+                    Half-Day Leave Active
+                  </Text>
+                  <Text className="text-[11px] text-indigo-700 mt-0.5 leading-tight">
+                    {leaveCheck.reason || 'Punch-in opens after 02:00 PM for the second half.'}
+                  </Text>
+                </View>
+              </View>
+              <Badge label="HALF DAY" variant="warning" size="sm" />
+            </View>
+          ) : isAbsentCase && !isCheckedIn ? (
             <View className="bg-rose-50 p-3.5 rounded-2xl flex-row items-center justify-between border border-rose-200">
               <View className="flex-row items-center gap-2.5 flex-1 pr-2">
                 <Ionicons name="close-circle" size={22} color="#DC2626" />

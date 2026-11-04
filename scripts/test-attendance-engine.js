@@ -4,7 +4,7 @@ const {
   calculateOvertime,
   timeStringToMinutes,
   minutesTo12H
-} = require('../src/utils/attendanceCalculator');
+} = require('./utils/attendanceCalculator');
 
 console.log('--- Testing Attendance Engine Boundaries ---');
 

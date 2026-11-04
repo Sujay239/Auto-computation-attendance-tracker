@@ -6,6 +6,7 @@ export type AttendanceStatus =
   | 'HALF_DAY'
   | 'ABSENT'
   | 'LEAVE'
+  | 'ON_LEAVE'
   | 'HOLIDAY'
   | 'PENDING';
 
@@ -27,7 +28,7 @@ export interface AttendanceRecord {
   checkInISO?: string;
   checkOutISO?: string;
   status: AttendanceStatus;
-  statusLabel: string; // e.g. "On Time", "Within Buffer", "Late (Allowance 1 of 3)", "Half Day"
+  statusLabel: string; // e.g. "On Time", "Within Buffer", "Late (Allowance 1 of 3)", "Half Day", "Approved Leave"
   totalDurationMinutes: number; // gross
   workDurationMinutes: number; // net of lunch
   lunchDurationMinutes: number;
@@ -38,6 +39,14 @@ export interface AttendanceRecord {
   overtimeMinutes?: number;
   punches: PunchRecord[];
   notes?: string;
+
+  // Integrated Leave & Salary Deduction Fields (Section 5)
+  leaveType?: 'FULL_DAY' | 'HALF_DAY' | 'FIRST_HALF' | 'SECOND_HALF' | string;
+  leaveDeduction?: number; // amount deducted from leave balance (e.g. 0.25, 0.5, 1.0)
+  salaryDeduction?: number; // uncovered salary deduction in INR
+  leaveRequestId?: string; // related approved leave request ID
+  isApprovedLeave?: boolean;
+  isUnapprovedAbsence?: boolean;
 }
 
 export interface MonthlyAttendanceSummary {
@@ -55,5 +64,7 @@ export interface MonthlyAttendanceSummary {
   holidays: number;
   totalWorkHours: number;
   averageHoursPerDay: number;
+  paidLeaveDays?: number;
+  unpaidLeaveDays?: number;
+  totalSalaryDeduction?: number;
 }
-

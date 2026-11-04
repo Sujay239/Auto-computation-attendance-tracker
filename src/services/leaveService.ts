@@ -1,15 +1,23 @@
 import { LeaveBalance, LeaveRequest, LeaveType, LeaveDurationType } from '../types/leave';
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
+import { payrollCalculationEngine } from './payrollCalculationEngine';
+import { AttendanceRecord } from '../types/attendance';
+import { Employee } from '../types/employee';
 
 export const DEFAULT_LEAVE_BALANCES: LeaveBalance[] = [
   { type: 'CASUAL', label: 'Casual Leave', total: 12, used: 0, available: 12 },
   { type: 'SICK', label: 'Sick Leave', total: 5, used: 0, available: 5 },
 ];
 
+type AttendanceUpdateListener = (records: AttendanceRecord[]) => void;
+type AttendanceReversalListener = (requestId: string) => void;
+
 class LeaveService {
   private balances: LeaveBalance[] = [...DEFAULT_LEAVE_BALANCES];
   private requests: LeaveRequest[] = [];
+  private attendanceListeners: AttendanceUpdateListener[] = [];
+  private reversalListeners: AttendanceReversalListener[] = [];
 
   constructor() {
     this.balances = [...DEFAULT_LEAVE_BALANCES];
@@ -17,7 +25,19 @@ class LeaveService {
   }
 
   getBalances(): LeaveBalance[] {
-    return [...this.balances];
+    return this.balances.map((b) => ({ ...b }));
+  }
+
+  setBalances(balances: LeaveBalance[]): void {
+    this.balances = balances.map((b) => ({ ...b }));
+  }
+
+  onAttendanceUpdate(listener: AttendanceUpdateListener): void {
+    this.attendanceListeners.push(listener);
+  }
+
+  onAttendanceReversal(listener: AttendanceReversalListener): void {
+    this.reversalListeners.push(listener);
   }
 
   updateBalancesFromDashboard(balances: LeaveBalance[]): void {
@@ -109,8 +129,8 @@ class LeaveService {
         }
         return {
           success: true,
-          balances: this.balances,
-          requests: this.requests,
+          balances: this.getBalances(),
+          requests: this.getRequests(),
         };
       }
 
@@ -122,7 +142,6 @@ class LeaveService {
       };
     } catch (err: any) {
       clearTimeout(timeoutId);
-      // Offline fallback
       return {
         success: true,
         balances: this.getBalances(),
@@ -134,7 +153,6 @@ class LeaveService {
 
   /**
    * Apply for leave online via n8n backend workflow (POST /leave-apply)
-   * Authenticated using official JWT Bearer token
    */
   async applyLeaveOnline(params: {
     employeeId: string;
@@ -147,9 +165,7 @@ class LeaveService {
     whatsappNoticeAcknowledged: boolean;
   }): Promise<{ success: boolean; request?: LeaveRequest; error?: string }> {
     const token = authService.getToken();
-
     if (!token) {
-      // Fallback to local apply if running offline / unauthenticated demo
       return this.applyLeave(params);
     }
 
@@ -188,24 +204,10 @@ class LeaveService {
           status: res.request.status || 'PENDING',
           appliedOn: res.request.appliedOn || new Date().toISOString().split('T')[0],
           whatsappNoticeAcknowledged: res.request.whatsappNoticeAcknowledged ?? params.whatsappNoticeAcknowledged,
-          comments: res.request.comments || 'Pending management approval.',
+          comments: res.request.comments || 'Pending operational review & WhatsApp notice.',
         };
 
         this.requests.unshift(newReq);
-
-        // Update balance if provided in response
-        if (res.balance) {
-          const idx = this.balances.findIndex((b) => b.type === res.balance.leaveType);
-          if (idx !== -1) {
-            this.balances[idx] = {
-              ...this.balances[idx],
-              total: res.balance.total,
-              used: res.balance.used,
-              available: res.balance.available,
-            };
-          }
-        }
-
         return { success: true, request: newReq };
       }
 
@@ -215,11 +217,14 @@ class LeaveService {
       };
     } catch (err: any) {
       clearTimeout(timeoutId);
-      console.warn('Network request failed, falling back to local simulation:', err);
       return this.applyLeave(params);
     }
   }
 
+  /**
+   * Local leave application (Creates PENDING leave request)
+   * Section 5: Pending leave requests must NEVER affect balance, salary, or attendance.
+   */
   applyLeave(params: {
     employeeId: string;
     leaveType: LeaveType;
@@ -238,7 +243,6 @@ class LeaveService {
       return { success: false, error: 'Start date is required.' };
     }
 
-    // Calculate days count (strictly excluding Sundays as regular weekly offs)
     let daysCount = params.daysCount !== undefined ? params.daysCount : 1;
     if (params.durationType === 'FIRST_HALF' || params.durationType === 'SECOND_HALF') {
       daysCount = 0.5;
@@ -249,18 +253,12 @@ class LeaveService {
       const cur = new Date(y1, m1 - 1, d1);
       const end = new Date(y2, m2 - 1, d2);
       while (cur <= end) {
-        if (cur.getDay() !== 0) { // Mon-Sat working days only (Sundays excluded)
+        if (cur.getDay() !== 0) {
           count++;
         }
         cur.setDate(cur.getDate() + 1);
       }
       daysCount = Math.max(1, count);
-    }
-
-    // Check balance
-    const balance = this.balances.find((b) => b.type === params.leaveType);
-    if (balance && balance.available < daysCount) {
-      // Leave beyond balance is subject to salary deduction
     }
 
     const newRequest: LeaveRequest = {
@@ -280,6 +278,98 @@ class LeaveService {
 
     this.requests.unshift(newRequest);
     return { success: true, request: newRequest };
+  }
+
+  /**
+   * Section 5 & 9: Process Leave Approval, Rejection, or Cancellation
+   * Idempotent & traceable through payrollCalculationEngine.
+   */
+  reviewLeaveRequest(
+    requestId: string,
+    action: 'APPROVE' | 'REJECT' | 'RESET' | 'CANCEL',
+    comment?: string,
+    reviewerName = 'Admin'
+  ): { success: boolean; error?: string; request?: LeaveRequest } {
+    const req = this.requests.find((r) => r.id === requestId);
+    if (!req) {
+      return { success: false, error: `Leave request ${requestId} not found.` };
+    }
+
+    const previousStatus = req.status;
+
+    if (action === 'APPROVE') {
+      // Idempotency: if already approved, do nothing!
+      if (previousStatus === 'APPROVED') {
+        return { success: true, request: req };
+      }
+
+      req.status = 'APPROVED';
+      req.approvedOrRejectedBy = reviewerName;
+      req.reviewedOn = new Date().toISOString().split('T')[0];
+      req.comments = comment || 'Approved by HR Operations';
+
+      const currentEmp = authService.getCurrentEmployee();
+      const employee: Employee = currentEmp || {
+        id: req.employeeId,
+        firstName: 'Sujay',
+        lastName: 'Verma',
+        email: 'sujay.verma@autocomputation.com',
+        phone: '+91 9876543210',
+        salary: 30000,
+        designation: 'Senior Developer',
+        joiningDate: '2024-01-15',
+        employmentType: 'Full-time',
+        workLocation: 'Chinar Park, Kolkata',
+        role: 'EMPLOYEE',
+      };
+
+      // Process deduction through centralized calculation engine
+      const processResult = payrollCalculationEngine.processApprovedLeave(
+        req,
+        employee,
+        this.balances
+      );
+
+      this.balances = processResult.updatedBalances;
+
+      // Broadcast attendance creation to attendanceService
+      if (processResult.attendancesCreated.length > 0) {
+        for (const listener of this.attendanceListeners) {
+          listener(processResult.attendancesCreated);
+        }
+      }
+
+      return { success: true, request: req };
+    } else if (action === 'REJECT' || action === 'CANCEL' || action === 'RESET') {
+      // If was previously APPROVED, reverse deductions and restore balances (Section 9)
+      if (previousStatus === 'APPROVED') {
+        const reversalResult = payrollCalculationEngine.reverseApprovedLeave(
+          requestId,
+          this.balances
+        );
+        this.balances = reversalResult.updatedBalances;
+
+        // Clear deduction attributes on request
+        req.leaveDaysDeducted = 0;
+        req.unpaidDays = 0;
+        req.salaryDeduction = 0;
+        req.deductionRecords = [];
+
+        // Notify attendance service to remove/reset attendance records for this request
+        for (const listener of this.reversalListeners) {
+          listener(requestId);
+        }
+      }
+
+      req.status = action === 'REJECT' ? 'REJECTED' : 'PENDING';
+      req.approvedOrRejectedBy = action === 'REJECT' ? reviewerName : undefined;
+      req.reviewedOn = new Date().toISOString().split('T')[0];
+      req.comments = comment || (action === 'REJECT' ? 'Rejected as per policy.' : 'Reopened for review.');
+
+      return { success: true, request: req };
+    }
+
+    return { success: false, error: `Invalid action: ${action}` };
   }
 }
 

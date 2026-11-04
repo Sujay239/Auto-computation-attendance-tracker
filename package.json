@@ -36,6 +36,8 @@
   "devDependencies": {
     "@types/react": "~19.3.0",
     "eas-cli": "^27.4.1",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~5.9.3"
   },
   "scripts": {
@@ -45,6 +47,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "test": "node ./scripts/test-mandatory-cases.js",
+    "test:all": "node ./scripts/test-attendance-engine.js && node ./scripts/test-mandatory-cases.js",
     "postinstall": "node ./scripts/patch-css-interop.js"
   },
   "private": true

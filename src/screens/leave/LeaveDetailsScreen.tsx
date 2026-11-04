@@ -27,6 +27,11 @@ export const LeaveDetailsScreen: React.FC = () => {
     );
   }
 
+  const isApproved = request.status === 'APPROVED';
+  const leaveConsumed = request.leaveDaysDeducted ?? (isApproved ? request.daysCount : 0);
+  const unpaidDays = request.unpaidDays ?? 0;
+  const salaryDeduction = request.salaryDeduction ?? 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
@@ -70,6 +75,37 @@ export const LeaveDetailsScreen: React.FC = () => {
             {request.daysCount} {request.daysCount === 1 ? 'Day' : 'Days'} • {request.durationType.replace('_', ' ')}
           </Text>
         </Card>
+
+        {/* Section 8A: Leave Balance & Salary Deduction Impact Card */}
+        {isApproved && (
+          <Card className="mb-4 bg-emerald-50/50 border-emerald-200">
+            <View className="flex-row items-center gap-2 mb-2.5">
+              <Ionicons name="calculator-outline" size={18} color="#059669" />
+              <Text className="text-xs uppercase font-bold text-emerald-900">
+                Leave Consumption & Salary Impact
+              </Text>
+            </View>
+
+            <View className="space-y-2">
+              <View className="flex-row justify-between py-1.5 border-b border-emerald-100">
+                <Text className="text-xs text-slate-600 font-medium">Leave Balance Deducted:</Text>
+                <Text className="text-xs font-bold text-emerald-700">{leaveConsumed} Days</Text>
+              </View>
+
+              <View className="flex-row justify-between py-1.5 border-b border-emerald-100">
+                <Text className="text-xs text-slate-600 font-medium">Unpaid Leave Days:</Text>
+                <Text className="text-xs font-bold text-amber-700">{unpaidDays} Days</Text>
+              </View>
+
+              <View className="flex-row justify-between py-1.5">
+                <Text className="text-xs text-slate-600 font-medium">Salary Deduction Amount:</Text>
+                <Text className={`text-xs font-black ${salaryDeduction > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                  {salaryDeduction > 0 ? `-₹${salaryDeduction.toLocaleString()}` : '₹0.00 (Fully Covered by Leave)'}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        )}
 
         {/* Schedule & Duration */}
         <Card className="mb-4">
@@ -125,7 +161,7 @@ export const LeaveDetailsScreen: React.FC = () => {
               Manager Review & Remarks
             </Text>
             <Text className="text-xs text-slate-600 mb-1">
-              Reviewed by: <Text className="font-bold text-slate-900">{request.approvedOrRejectedBy || 'Sayan Roy'}</Text> on {request.reviewedOn}
+              Reviewed by: <Text className="font-bold text-slate-900">{request.approvedOrRejectedBy || 'HR Operations'}</Text> on {request.reviewedOn}
             </Text>
             {request.comments && (
               <Text className="text-xs text-slate-500 italic">

@@ -1,5 +1,6 @@
 import { API_CONFIG } from '../config/apiConfig';
 import { authService } from './authService';
+import { leaveService } from './leaveService';
 import {
   AdminDashboardStats,
   AdminEmployeeItem,
@@ -206,19 +207,25 @@ class AdminService {
     action: 'APPROVE' | 'REJECT' | 'PENDING' | 'RESET',
     comment?: string
   ): Promise<{ success: boolean; error?: string }> {
+    const defaultComment =
+      action === 'APPROVE'
+        ? 'Approved by Admin'
+        : action === 'REJECT'
+        ? 'Rejected by Admin'
+        : 'Reopened by Admin';
+
     const token = authService.getToken();
     if (!token) {
-      return { success: false, error: 'Unauthorized: Admin token required.' };
+      // Local / Offline fallback execution
+      const localRes = leaveService.reviewLeaveRequest(
+        requestId,
+        action === 'PENDING' ? 'RESET' : action,
+        comment || defaultComment
+      );
+      return localRes;
     }
 
     try {
-      const defaultComment =
-        action === 'APPROVE'
-          ? 'Approved by Admin'
-          : action === 'REJECT'
-          ? 'Rejected by Admin'
-          : 'Reopened by Admin';
-
       const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEAVE_LIST}`, {
         method: 'POST',
         headers: authService.getAuthHeaders(),
@@ -232,11 +239,23 @@ class AdminService {
 
       const res = await response.json();
       if (response.ok && res.success) {
+        // Also reflect immediately in local calculation engine & state
+        leaveService.reviewLeaveRequest(
+          requestId,
+          action === 'PENDING' ? 'RESET' : action,
+          comment || defaultComment
+        );
         return { success: true };
       }
       return { success: false, error: res.error || 'Failed to process leave decision.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Network error submitting leave decision.' };
+      // Offline fallback
+      const localRes = leaveService.reviewLeaveRequest(
+        requestId,
+        action === 'PENDING' ? 'RESET' : action,
+        comment || defaultComment
+      );
+      return localRes.success ? { success: true } : { success: false, error: err.message || 'Network error submitting leave decision.' };
     }
   }
 

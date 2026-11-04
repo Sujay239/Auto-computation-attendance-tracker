@@ -107,6 +107,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const today = attendanceService.getTodayRecord();
     setTodayRecord(today);
     setSummary(attendanceService.getMonthlySummary());
+    setLeaveBalances(leaveService.getBalances());
     setIsLoading(false);
   };
 

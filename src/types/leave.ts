@@ -25,5 +25,10 @@ export interface LeaveRequest {
   reviewedOn?: string;
   comments?: string;
   whatsappNoticeAcknowledged: boolean;
-}
 
+  // Integrated Calculation & Deductions (Section 5 & 8A)
+  leaveDaysDeducted?: number; // Leave balance consumed
+  unpaidDays?: number; // Uncovered days deducted from salary
+  salaryDeduction?: number; // Monetary salary deduction amount
+  deductionRecords?: string[]; // IDs of generated LeaveDeductionRecords
+}
