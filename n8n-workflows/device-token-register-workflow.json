@@ -1,0 +1,143 @@
+{
+  "name": "Attendance - Device Token Register (Push Notifications)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "device-token-register",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-token",
+      "name": "Webhook Register Token",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [180, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst employeeId = body.employeeId;\nconst pushToken = body.pushToken;\n\nif (!employeeId || !pushToken) {\n  return {\n    json: {\n      isValid: false,\n      error: 'Missing required employeeId or pushToken in request body'\n    }\n  };\n}\n\nreturn {\n  json: {\n    isValid: true,\n    employeeId: String(employeeId).trim(),\n    role: (body.role || 'EMPLOYEE').toUpperCase(),\n    pushToken: String(pushToken).trim(),\n    fcmToken: body.fcmToken || null,\n    platform: body.platform || 'android',\n    deviceName: body.deviceName || 'Android Device',\n    appVersion: body.appVersion || '1.0.0'\n  }\n};"
+      },
+      "id": "node-validate-token",
+      "name": "Validate Request Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 260]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isValid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-valid",
+      "name": "Check Payload Validity",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [620, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO employee_device_tokens (\n  employee_id, role, push_token, fcm_token, platform, device_name, app_version, is_active, updated_at\n)\nVALUES (\n  '{{ $json.employeeId }}',\n  '{{ $json.role }}',\n  '{{ $json.pushToken }}',\n  {{ $json.fcmToken ? \"'\" + $json.fcmToken + \"'\" : \"NULL\" }},\n  '{{ $json.platform }}',\n  '{{ $json.deviceName }}',\n  '{{ $json.appVersion }}',\n  TRUE,\n  CURRENT_TIMESTAMP\n)\nON CONFLICT (push_token) DO UPDATE SET\n  employee_id = EXCLUDED.employee_id,\n  role = EXCLUDED.role,\n  fcm_token = COALESCE(EXCLUDED.fcm_token, employee_device_tokens.fcm_token),\n  platform = EXCLUDED.platform,\n  device_name = EXCLUDED.device_name,\n  is_active = TRUE,\n  updated_at = CURRENT_TIMESTAMP\nRETURNING id, employee_id, role, push_token;"
+      },
+      "id": "node-db-upsert",
+      "name": "Postgres Upsert Device Token",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [840, 200],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIALS_ID",
+          "name": "Postgres - AutoComputation DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"statusCode\": 200,\n  \"message\": \"Device push notification token registered successfully\",\n  \"employeeId\": \"{{ $json.employee_id }}\",\n  \"role\": \"{{ $json.role }}\"\n}",
+        "options": {}
+      },
+      "id": "node-respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1060, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"statusCode\": 400,\n  \"error\": \"{{ $json.error || 'Invalid token registration payload' }}\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-error",
+      "name": "Respond Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 380]
+    }
+  ],
+  "connections": {
+    "Webhook Register Token": {
+      "main": [
+        [
+          {
+            "node": "Validate Request Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request Payload": {
+      "main": [
+        [
+          {
+            "node": "Check Payload Validity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payload Validity": {
+      "main": [
+        [
+          {
+            "node": "Postgres Upsert Device Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Upsert Device Token": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
+

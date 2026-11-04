@@ -32,6 +32,7 @@ export const API_CONFIG = {
     ADMIN_DASHBOARD: '/admin-dashboard',
     ADMIN_EMPLOYEES: '/admin-employees',
     AUTH_VERIFY: '/auth-verify',
+    DEVICE_TOKEN_REGISTER: '/device-token-register',
   },
 
   TIMEOUT_MS: 12000,

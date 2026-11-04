@@ -5,6 +5,7 @@ import { Stack, useRouter, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, StatusBar as RNStatusBar, BackHandler } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '../context/AuthContext';
 import { AttendanceProvider } from '../context/AttendanceContext';
@@ -59,6 +60,33 @@ function GlobalBackHandler() {
   return null;
 }
 
+/**
+ * Global Push Notification Response Listener
+ * Navigates to appropriate screen when user taps a push notification
+ */
+function GlobalNotificationListener() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'LEAVE_APPLICATION' || data?.targetScreen === 'admin-approvals') {
+        router.push('/(admin)/approvals' as any);
+      } else if (data?.type === 'LEAVE_STATUS' || data?.targetScreen === 'leave') {
+        router.push('/(tabs)/leave' as any);
+      } else if (data?.type === 'OVERTIME_STATUS' || data?.targetScreen === 'overtime') {
+        router.push('/(tabs)/overtime' as any);
+      } else {
+        router.push('/notifications' as any);
+      }
+    });
+
+    return () => responseSub.remove();
+  }, [router]);
+
+  return null;
+}
+
 export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -72,6 +100,7 @@ export default function RootLayout() {
       <AuthProvider>
         <AttendanceProvider>
           <GlobalBackHandler />
+          <GlobalNotificationListener />
           <StatusBar style="dark" />
           <AnimatedSplashScreen />
           <Stack

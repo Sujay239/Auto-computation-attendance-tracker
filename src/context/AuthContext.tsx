@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Employee, AuthCredentials } from '../types/employee';
 import { authService } from '../services/authService';
+import { pushNotificationService } from '../services/pushNotificationService';
 
 interface AuthContextType {
   user: Employee | null;
@@ -49,6 +50,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     restoreSession();
   }, []);
+
+  // Sync device push token with backend whenever user is authenticated
+  useEffect(() => {
+    if (user?.id) {
+      pushNotificationService
+        .syncDeviceTokenWithBackend(user.id, user.role || 'EMPLOYEE')
+        .catch((err) => console.log('[PushNotification] Sync skipped/failed:', err?.message));
+    }
+  }, [user?.id, user?.role]);
 
   const login = async (credentials: AuthCredentials) => {
     setIsLoading(true);
