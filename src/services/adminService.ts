@@ -154,7 +154,15 @@ class AdminService {
    */
   async getAllLeaveRequests(
     statusFilter: string = 'PENDING'
-  ): Promise<{ success: boolean; requests?: AdminLeaveApprovalItem[]; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    requests?: AdminLeaveApprovalItem[];
+    pendingCount?: number;
+    approvedCount?: number;
+    rejectedCount?: number;
+    totalRequests?: number;
+    error?: string;
+  }> {
     const token = authService.getToken();
     if (!token) {
       return { success: false, error: 'Unauthorized: Admin token required.' };
@@ -166,14 +174,23 @@ class AdminService {
         headers: authService.getAuthHeaders(),
         body: JSON.stringify({
           token,
+          all: true,
           targetEmployeeId: 'ALL',
+          status: statusFilter || 'ALL',
           statusFilter: statusFilter || 'ALL',
         }),
       });
 
       const res = await response.json();
       if (response.ok && (res.success || Array.isArray(res.requests))) {
-        return { success: true, requests: res.requests || [] };
+        return {
+          success: true,
+          requests: res.requests || [],
+          pendingCount: res.pendingCount,
+          approvedCount: res.approvedCount,
+          rejectedCount: res.rejectedCount,
+          totalRequests: res.totalRequests,
+        };
       }
       return { success: false, error: res.error || 'Failed to load leave requests.' };
     } catch (err: any) {
@@ -186,7 +203,7 @@ class AdminService {
    */
   async reviewLeaveRequest(
     requestId: string,
-    action: 'APPROVE' | 'REJECT',
+    action: 'APPROVE' | 'REJECT' | 'PENDING' | 'RESET',
     comment?: string
   ): Promise<{ success: boolean; error?: string }> {
     const token = authService.getToken();
@@ -195,6 +212,13 @@ class AdminService {
     }
 
     try {
+      const defaultComment =
+        action === 'APPROVE'
+          ? 'Approved by Admin'
+          : action === 'REJECT'
+          ? 'Rejected by Admin'
+          : 'Reopened by Admin';
+
       const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LEAVE_LIST}`, {
         method: 'POST',
         headers: authService.getAuthHeaders(),
@@ -202,7 +226,7 @@ class AdminService {
           token,
           action,
           requestId,
-          comment: comment || (action === 'APPROVE' ? 'Approved by Admin' : 'Rejected by Admin'),
+          comment: comment || defaultComment,
         }),
       });
 

@@ -13,9 +13,11 @@ import {
   Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/adminService';
+import { Avatar } from '../../components/common/Avatar';
 import {
   AdminEmployeeItem,
   AdminEmployeeFormInput,
@@ -24,6 +26,7 @@ import {
 
 export const AdminEmployeesScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user } = useAuth();
 
   const [employees, setEmployees] = useState<AdminEmployeeItem[]>([]);
@@ -249,21 +252,31 @@ export const AdminEmployeesScreen: React.FC = () => {
         }}
       >
         <View className="flex-row items-center justify-between mb-2">
-          <View>
-            <Text className="text-xl font-black text-slate-900">
-              Staff Directory
-            </Text>
-            <Text className="text-xs text-slate-500 font-medium">
-              Manage organization members, profiles & compensation
-            </Text>
+          <View className="flex-row items-center gap-3 flex-1 mr-2">
+            <TouchableOpacity
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/(admin)/home' as any))}
+              activeOpacity={0.7}
+              className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center"
+              accessibilityLabel="Back"
+            >
+              <Ionicons name="arrow-back" size={20} color="#0F172A" />
+            </TouchableOpacity>
+            <View className="flex-1">
+              <Text className="text-xl font-black text-slate-900" numberOfLines={1}>
+                Staff Directory
+              </Text>
+              <Text className="text-xs text-slate-500 font-medium" numberOfLines={1}>
+                Manage members, profiles & compensation
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
             onPress={handleOpenAddModal}
             activeOpacity={0.8}
-            className="flex-row items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-600 shadow-sm"
+            className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 shadow-sm"
           >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Ionicons name="add" size={17} color="#FFFFFF" />
             <Text className="text-xs font-bold text-white">Add Staff</Text>
           </TouchableOpacity>
         </View>
@@ -354,29 +367,15 @@ export const AdminEmployeesScreen: React.FC = () => {
                 {/* Employee Header */}
                 <View className="flex-row items-center justify-between mb-3">
                   <View className="flex-row items-center gap-3 flex-1">
-                    <View
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 22,
-                        backgroundColor: emp.role === 'ADMIN' ? '#EEF2FF' : '#F1F5F9',
-                        borderColor: emp.role === 'ADMIN' ? '#C7D2FE' : '#E2E8F0',
-                        borderWidth: 1,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '800',
-                          color: emp.role === 'ADMIN' ? '#4338CA' : '#475569',
-                        }}
-                      >
-                        {emp.firstName ? emp.firstName[0] : 'E'}
-                        {emp.lastName ? emp.lastName[0] : ''}
-                      </Text>
-                    </View>
+                    <Avatar
+                      uri={emp.avatarUrl || (emp as any).avatar_url}
+                      name={`${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Staff'}
+                      size={44}
+                      showStatusDot={true}
+                      statusColor={emp.isActive ? '#10B981' : '#94A3B8'}
+                      fallbackBg={emp.role === 'ADMIN' ? '#EEF2FF' : '#F1F5F9'}
+                      fallbackTextColor={emp.role === 'ADMIN' ? '#4338CA' : '#475569'}
+                    />
 
                     <View className="flex-1">
                       <View className="flex-row items-center gap-2">
@@ -855,13 +854,26 @@ export const AdminEmployeesScreen: React.FC = () => {
         >
           {/* Modal Header */}
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-200">
-            <View>
-              <Text className="text-lg font-black text-slate-900">
-                Edit Staff: {selectedEmployee?.id}
-              </Text>
-              <Text className="text-xs text-slate-500 font-medium">
-                Update compensation, profile & permissions
-              </Text>
+            <View className="flex-row items-center gap-3 flex-1">
+              {selectedEmployee && (
+                <Avatar
+                  uri={selectedEmployee.avatarUrl || (selectedEmployee as any).avatar_url}
+                  name={`${selectedEmployee.firstName || ''} ${selectedEmployee.lastName || ''}`.trim() || 'Staff'}
+                  size={42}
+                  showStatusDot={true}
+                  statusColor={editForm.isActive ? '#10B981' : '#94A3B8'}
+                  fallbackBg={selectedEmployee.role === 'ADMIN' ? '#EEF2FF' : '#F1F5F9'}
+                  fallbackTextColor={selectedEmployee.role === 'ADMIN' ? '#4338CA' : '#475569'}
+                />
+              )}
+              <View className="flex-1">
+                <Text className="text-lg font-black text-slate-900">
+                  Edit Staff: {selectedEmployee?.id}
+                </Text>
+                <Text className="text-xs text-slate-500 font-medium">
+                  Update compensation, profile & permissions
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               onPress={() => setIsEditModalVisible(false)}

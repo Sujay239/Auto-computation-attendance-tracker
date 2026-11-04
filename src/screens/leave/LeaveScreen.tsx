@@ -88,6 +88,7 @@ export const LeaveScreen: React.FC = () => {
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
         <Header
           title="Leave Management"
+          showBack
           subtitle="Entitlements, Balances & Demo Submissions"
           rightAction={
             <Button

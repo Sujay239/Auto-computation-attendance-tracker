@@ -142,6 +142,7 @@ class LeaveService {
     durationType: LeaveDurationType;
     startDate: string;
     endDate: string;
+    daysCount?: number;
     reason: string;
     whatsappNoticeAcknowledged: boolean;
   }): Promise<{ success: boolean; request?: LeaveRequest; error?: string }> {
@@ -164,6 +165,7 @@ class LeaveService {
           durationType: params.durationType,
           startDate: params.startDate,
           endDate: params.endDate || params.startDate,
+          daysCount: params.daysCount,
           reason: params.reason,
           whatsappNoticeAcknowledged: params.whatsappNoticeAcknowledged,
         }),
@@ -224,6 +226,7 @@ class LeaveService {
     durationType: LeaveDurationType;
     startDate: string;
     endDate: string;
+    daysCount?: number;
     reason: string;
     whatsappNoticeAcknowledged: boolean;
   }): { success: boolean; request?: LeaveRequest; error?: string } {
@@ -235,15 +238,23 @@ class LeaveService {
       return { success: false, error: 'Start date is required.' };
     }
 
-    // Calculate days count
-    let daysCount = 1;
+    // Calculate days count (strictly excluding Sundays as regular weekly offs)
+    let daysCount = params.daysCount !== undefined ? params.daysCount : 1;
     if (params.durationType === 'FIRST_HALF' || params.durationType === 'SECOND_HALF') {
       daysCount = 0.5;
-    } else if (params.startDate && params.endDate && params.startDate !== params.endDate) {
-      const d1 = new Date(params.startDate);
-      const d2 = new Date(params.endDate);
-      const diffTime = Math.abs(d2.getTime() - d1.getTime());
-      daysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    } else if (params.startDate && params.endDate) {
+      let count = 0;
+      const [y1, m1, d1] = params.startDate.split('-').map(Number);
+      const [y2, m2, d2] = params.endDate.split('-').map(Number);
+      const cur = new Date(y1, m1 - 1, d1);
+      const end = new Date(y2, m2 - 1, d2);
+      while (cur <= end) {
+        if (cur.getDay() !== 0) { // Mon-Sat working days only (Sundays excluded)
+          count++;
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      daysCount = Math.max(1, count);
     }
 
     // Check balance

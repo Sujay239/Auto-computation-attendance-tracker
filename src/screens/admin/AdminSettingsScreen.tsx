@@ -204,12 +204,24 @@ export const AdminSettingsScreen: React.FC = () => {
           borderBottomColor: '#E2E8F0',
         }}
       >
-        <Text className="text-xl font-black text-slate-900">
-          System Administration
-        </Text>
-        <Text className="text-xs text-slate-500 font-medium">
-          Corporate parameters, administrator credentials, and settings
-        </Text>
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(admin)/home' as any))}
+            activeOpacity={0.7}
+            className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="arrow-back" size={20} color="#0F172A" />
+          </TouchableOpacity>
+          <View className="flex-1">
+            <Text className="text-xl font-black text-slate-900" numberOfLines={1}>
+              System Administration
+            </Text>
+            <Text className="text-xs text-slate-500 font-medium" numberOfLines={1}>
+              Corporate parameters, administrator credentials, and settings
+            </Text>
+          </View>
+        </View>
       </View>
 
       <ScrollView

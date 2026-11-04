@@ -60,7 +60,8 @@ export const BottomTabBar: React.FC = () => {
   ];
 
   const handleTabPress = (route: string) => {
-    router.replace(route as any);
+    if (pathname === route) return;
+    router.push(route as any);
   };
 
   const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? 14 : 8);

@@ -45,6 +45,7 @@ export const HomeScreen: React.FC = () => {
   const [punchFeedback, setPunchFeedback] = useState<string | null>(null);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
+  const [isPunchingIn, setIsPunchingIn] = useState(false);
 
   const displayHoliday = upcomingHoliday || null;
   const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
@@ -64,11 +65,18 @@ export const HomeScreen: React.FC = () => {
         setPunchFeedback('Punch-in closed after 2:30 PM. You have been directly marked as Absent for today.');
         return;
       }
-      const res = await punchIn();
-      if (res.success && res.record) {
-        setPunchFeedback(`Punched in at ${res.record.checkIn} (${res.record.statusLabel})`);
-      } else {
-        setPunchFeedback(res.error || 'Failed to punch in');
+      setIsPunchingIn(true);
+      try {
+        const res = await punchIn();
+        if (res.success && res.record) {
+          setPunchFeedback(`Punched in at ${res.record.checkIn} (${res.record.statusLabel})`);
+        } else {
+          setPunchFeedback(res.error || 'Failed to punch in');
+        }
+      } catch (err: any) {
+        setPunchFeedback(err.message || 'Error occurred while punching in.');
+      } finally {
+        setIsPunchingIn(false);
       }
     } else if (!isCheckedOut) {
       // Show confirmation modal before punching out
@@ -315,9 +323,11 @@ export const HomeScreen: React.FC = () => {
             </View>
           ) : !isCheckedOut ? (
             <Button
-              label={isCheckedIn ? 'Punch Out' : 'Punch In Now'}
+              label={isCheckedIn ? 'Punch Out' : (isPunchingIn ? 'Punching In...' : 'Punch In Now')}
               size="lg"
               variant={isCheckedIn ? 'destructive' : 'primary'}
+              isLoading={isPunchingIn}
+              disabled={isPunchingIn}
               onPress={handlePunchToggle}
               icon={
                 <Ionicons

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "449483032662",
+    "project_id": "attandance-tracker-84c3c",
+    "storage_bucket": "attandance-tracker-84c3c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:449483032662:android:341795036346c17fb293f7",
+        "android_client_info": {
+          "package_name": "com.autocompuation.attandance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_nPM4mP5ULhPrA69o2SHJCrAWaQhN1Uk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

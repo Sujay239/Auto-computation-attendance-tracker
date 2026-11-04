@@ -92,7 +92,7 @@ export const ProfileScreen: React.FC = () => {
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
-        <Header title="My Profile" subtitle="Employee Info & Preferences" />
+        <Header title="My Profile" subtitle="Employee Info & Preferences" showBack />
       </View>
 
       <ScrollView

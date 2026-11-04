@@ -28,6 +28,7 @@ export const AttendanceScreen: React.FC = () => {
   const [punchMessage, setPunchMessage] = useState<string | null>(null);
   const [showPunchOutModal, setShowPunchOutModal] = useState(false);
   const [isPunchingOut, setIsPunchingOut] = useState(false);
+  const [isPunchingIn, setIsPunchingIn] = useState(false);
   const currentMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const isPast230PM = currentMinutes >= 870;
   const isAbsentCase = todayRecord?.status === 'ABSENT' || (!isCheckedIn && !isCheckedOut && isPast230PM);
@@ -45,11 +46,18 @@ export const AttendanceScreen: React.FC = () => {
         setPunchMessage('Punch-in closed after 2:30 PM. You have been directly marked as Absent for today.');
         return;
       }
-      const res = await punchIn();
-      if (res.success && res.record) {
-        setPunchMessage(`Checked in at ${res.record.checkIn} - ${res.record.statusLabel}`);
-      } else {
-        setPunchMessage(res.error || 'Check-in failed');
+      setIsPunchingIn(true);
+      try {
+        const res = await punchIn();
+        if (res.success && res.record) {
+          setPunchMessage(`Checked in at ${res.record.checkIn} - ${res.record.statusLabel}`);
+        } else {
+          setPunchMessage(res.error || 'Check-in failed');
+        }
+      } catch (err: any) {
+        setPunchMessage(err.message || 'Check-in failed');
+      } finally {
+        setIsPunchingIn(false);
       }
     } else if (!isCheckedOut) {
       // Require confirmation before punching out
@@ -69,13 +77,21 @@ export const AttendanceScreen: React.FC = () => {
     }
   };
 
-  // Calendar days generation for current month demo (Nov 2026)
-  const currentMonthDays = Array.from({ length: 30 }, (_, i) => {
-    const dayNum = i + 1;
-    const dateStr = `2026-11-${dayNum.toString().padStart(2, '0')}`;
+  // Calendar days generation for current month (Nov 2026) - Structured in strict 7-day rows
+  const currentYear = 2026;
+  const currentMonthIdx = 10; // November (0-indexed)
+  const daysInMonth = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
+  const firstDayOfWeek = new Date(currentYear, currentMonthIdx, 1).getDay();
+
+  const calendarCells = [];
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    calendarCells.push(null);
+  }
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+    const dateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
     const record = records.find((r) => r.date === dateStr);
     const holiday = holidayService.getHolidayByDate(dateStr);
-    const dayOfWeek = new Date(2026, 10, dayNum).getDay();
+    const dayOfWeek = new Date(currentYear, currentMonthIdx, dayNum).getDay();
     const isWeekend = dayOfWeek === 0; // Mon-Sat are 6 working days; Sunday (0) is weekly off
 
     let statusType = 'UPCOMING';
@@ -87,14 +103,26 @@ export const AttendanceScreen: React.FC = () => {
       statusType = 'WEEKEND';
     }
 
-    return { dayNum, dateStr, record, isWeekend, holiday, statusType };
-  });
+    calendarCells.push({ dayNum, dateStr, record, isWeekend, holiday, statusType });
+  }
+
+  // Chunk into exact 7-day rows for perfect grid alignment
+  const calendarWeeks = [];
+  for (let i = 0; i < calendarCells.length; i += 7) {
+    const week = calendarCells.slice(i, i + 7);
+    while (week.length < 7) {
+      week.push(null);
+    }
+    calendarWeeks.push(week);
+  }
+  const currentMonthDays = calendarCells.filter(Boolean);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
         <Header
           title="Attendance Management"
+          showBack
           subtitle="Daily Clock-In, Monthly Shift & Policy Records"
           rightAction={
             <View className="flex-row items-center gap-1.5">
@@ -380,67 +408,87 @@ export const AttendanceScreen: React.FC = () => {
         </View>
 
         <Card className="mb-4 p-4">
-          {/* Weekday Header */}
-          <View className="flex-row justify-between mb-2 pb-2 border-b border-slate-100">
+          {/* Weekday Header (Strict 7 Columns) */}
+          <View className="flex-row w-full mb-2 pb-2 border-b border-slate-100">
             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
-              <Text
-                key={idx}
-                className="w-9 text-center text-[11px] font-bold text-slate-400"
-              >
-                {day}
-              </Text>
+              <View key={idx} className="flex-1 items-center justify-center">
+                <Text
+                  className={`text-[11px] font-bold ${
+                    idx === 0 ? 'text-rose-500' : 'text-slate-400'
+                  }`}
+                >
+                  {day}
+                </Text>
+              </View>
             ))}
           </View>
 
-          {/* Days Grid */}
-          <View className="flex-row flex-wrap justify-between">
-            {currentMonthDays.map((item) => {
-              const getDayBg = () => {
-                if (item.statusType === 'HOLIDAY')
-                  return 'bg-purple-100 border-purple-300';
-                if (item.statusType === 'ON_TIME' || item.statusType === 'PRESENT')
-                  return 'bg-emerald-100 border-emerald-300';
-                if (item.statusType === 'WITHIN_BUFFER')
-                  return 'bg-blue-100 border-blue-300';
-                if (item.statusType === 'LATE')
-                  return 'bg-amber-100 border-amber-300';
-                if (item.statusType === 'HALF_DAY')
-                  return 'bg-rose-100 border-rose-300';
-                if (item.isWeekend)
-                  return 'bg-slate-100/70 border-transparent';
-                return 'bg-white border-slate-200';
-              };
+          {/* Days Grid (Strict 7 Days Per Row) */}
+          <View className="w-full">
+            {calendarWeeks.map((week, weekIdx) => (
+              <View key={`week-${weekIdx}`} className="flex-row w-full my-1">
+                {week.map((item, dayIdx) => {
+                  if (!item) {
+                    return (
+                      <View
+                        key={`blank-${weekIdx}-${dayIdx}`}
+                        className="flex-1 items-center justify-center"
+                      />
+                    );
+                  }
 
-              return (
-                <TouchableOpacity
-                  key={item.dayNum}
-                  onPress={() => {
-                    if (item.holiday) {
-                      router.push('/holidays');
-                    } else if (item.record) {
-                      router.push({
-                        pathname: '/attendance/details',
-                        params: { id: item.record.id },
-                      });
-                    }
-                  }}
-                  activeOpacity={0.7}
-                  className={`w-9 h-9 items-center justify-center rounded-xl mb-2 border ${getDayBg()}`}
-                >
-                  <Text
-                    className={`text-xs font-bold ${
-                      item.statusType === 'HOLIDAY'
-                        ? 'text-purple-800'
-                        : item.isWeekend
-                        ? 'text-slate-400'
-                        : 'text-slate-800'
-                    }`}
-                  >
-                    {item.dayNum}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                  const getDayBg = () => {
+                    if (item.statusType === 'HOLIDAY')
+                      return 'bg-purple-100 border-purple-300';
+                    if (item.statusType === 'ON_TIME' || item.statusType === 'PRESENT')
+                      return 'bg-emerald-100 border-emerald-300';
+                    if (item.statusType === 'WITHIN_BUFFER')
+                      return 'bg-blue-100 border-blue-300';
+                    if (item.statusType === 'LATE')
+                      return 'bg-amber-100 border-amber-300';
+                    if (item.statusType === 'HALF_DAY')
+                      return 'bg-rose-100 border-rose-300';
+                    if (item.isWeekend)
+                      return 'bg-slate-100/70 border-transparent';
+                    return 'bg-white border-slate-200';
+                  };
+
+                  return (
+                    <View
+                      key={item.dateStr}
+                      className="flex-1 items-center justify-center"
+                    >
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (item.holiday) {
+                            router.push('/holidays');
+                          } else if (item.record) {
+                            router.push({
+                              pathname: '/attendance/details',
+                              params: { id: item.record.id },
+                            });
+                          }
+                        }}
+                        activeOpacity={0.7}
+                        className={`w-9 h-9 items-center justify-center rounded-xl border ${getDayBg()}`}
+                      >
+                        <Text
+                          className={`text-xs font-bold ${
+                            item.statusType === 'HOLIDAY'
+                              ? 'text-purple-800'
+                              : item.isWeekend
+                              ? 'text-slate-400'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          {item.dayNum}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
           </View>
 
           {/* Calendar Status Legend */}

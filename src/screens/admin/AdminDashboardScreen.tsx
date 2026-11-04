@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/adminService';
+import { Avatar } from '../../components/common/Avatar';
 import { AdminDashboardStats } from '../../types/admin';
 
 export const AdminDashboardScreen: React.FC = () => {
@@ -328,16 +329,14 @@ export const AdminDashboardScreen: React.FC = () => {
                         >
                           <View className="flex-row items-center gap-3 flex-1">
                             {/* Avatar or Initials */}
-                            <View className="w-10 h-10 rounded-full bg-indigo-100 border border-indigo-200 items-center justify-center">
-                              <Text className="text-xs font-black text-indigo-700">
-                                {item.employeeName
-                                  .split(' ')
-                                  .map((n) => n[0])
-                                  .join('')
-                                  .substring(0, 2)
-                                  .toUpperCase()}
-                              </Text>
-                            </View>
+                            <Avatar
+                              uri={item.avatarUrl || (item as any).avatar_url}
+                              name={item.employeeName || 'Staff'}
+                              size={40}
+                              showStatusDot={false}
+                              fallbackBg="#EEF2FF"
+                              fallbackTextColor="#4338CA"
+                            />
 
                             <View className="flex-1">
                               <View className="flex-row items-center gap-2">

@@ -18,6 +18,7 @@ import { Header } from '../../components/common/Header';
 import { Card } from '../../components/common/Card';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { DatePickerModal } from '../../components/common/DatePickerModal';
 
 export const ApplyLeaveScreen: React.FC = () => {
   const router = useRouter();
@@ -27,16 +28,103 @@ export const ApplyLeaveScreen: React.FC = () => {
   const casualBal = leaveBalances.find((b) => b.type === 'CASUAL')?.available ?? 12;
   const sickBal = leaveBalances.find((b) => b.type === 'SICK')?.available ?? 5;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Helper to get initial valid non-Sunday date (Mon-Sat)
+  const getInitialWorkingDate = () => {
+    const dObj = new Date();
+    if (dObj.getDay() === 0) {
+      dObj.setDate(dObj.getDate() + 1); // Shift to Monday if today is Sunday
+    }
+    return `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(
+      dObj.getDate()
+    ).padStart(2, '0')}`;
+  };
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
+    today.getDate()
+  ).padStart(2, '0')}`;
+
   const [leaveType, setLeaveType] = useState<LeaveType>('CASUAL');
   const [durationType, setDurationType] = useState<LeaveDurationType>('FULL_DAY');
-  const [startDate, setStartDate] = useState(todayStr);
-  const [endDate, setEndDate] = useState(todayStr);
+  const [startDate, setStartDate] = useState(getInitialWorkingDate());
+  const [endDate, setEndDate] = useState(getInitialWorkingDate());
   const [reason, setReason] = useState('');
   const [ackWhatsapp, setAckWhatsapp] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Date Picker State
+  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
+  const [datePickerField, setDatePickerField] = useState<'START' | 'END'>('START');
+
+  const openStartDatePicker = () => {
+    setDatePickerField('START');
+    setShowDatePicker(true);
+  };
+
+  const openEndDatePicker = () => {
+    setDatePickerField('END');
+    setShowDatePicker(true);
+  };
+
+  const handleDatePicked = (selected: string) => {
+    if (datePickerField === 'START') {
+      setStartDate(selected);
+      // If end date is earlier than start date, automatically adjust end date
+      if (endDate < selected) {
+        setEndDate(selected);
+      }
+    } else {
+      if (selected >= startDate) {
+        setEndDate(selected);
+      } else {
+        setEndDate(startDate);
+      }
+    }
+  };
+
+  const formatDisplayDate = (dStr: string) => {
+    if (!dStr) return 'Select Date';
+    const [y, m, d] = dStr.split('-').map(Number);
+    if (!y || !m || !d) return dStr;
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  // Calculate total working days in leave range (strictly excluding Sundays as regular weekly off)
+  const getLeaveDaysBreakdown = () => {
+    if (durationType !== 'FULL_DAY') {
+      return { totalDays: 0.5, sundaysExcluded: 0 };
+    }
+    if (!startDate || !endDate) return { totalDays: 1, sundaysExcluded: 0 };
+
+    const [y1, m1, d1] = startDate.split('-').map(Number);
+    const [y2, m2, d2] = endDate.split('-').map(Number);
+    const cur = new Date(y1, m1 - 1, d1);
+    const end = new Date(y2, m2 - 1, d2);
+
+    let totalDays = 0;
+    let sundaysExcluded = 0;
+
+    while (cur <= end) {
+      if (cur.getDay() === 0) {
+        sundaysExcluded++; // Regular weekly off - zero deduction
+      } else {
+        totalDays++; // Monday through Saturday working days
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    return { totalDays, sundaysExcluded };
+  };
+
+  const breakdown = getLeaveDaysBreakdown();
 
   const handleSubmit = async () => {
     setError(null);
@@ -49,6 +137,25 @@ export const ApplyLeaveScreen: React.FC = () => {
       return;
     }
 
+    // Sunday validations
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    if (new Date(sy, sm - 1, sd).getDay() === 0) {
+      setError('Sundays are regular weekly off days. You cannot apply for a leave on Sunday.');
+      return;
+    }
+
+    if (durationType === 'FULL_DAY') {
+      const [ey, em, ed] = endDate.split('-').map(Number);
+      if (new Date(ey, em - 1, ed).getDay() === 0) {
+        setError('Sundays are regular weekly off days. Leave end date cannot be Sunday.');
+        return;
+      }
+      if (breakdown.totalDays === 0) {
+        setError('Selected leave period falls entirely on Sundays (weekly off). No leave deduction is needed.');
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
       const res = await leaveService.applyLeaveOnline({
@@ -57,6 +164,7 @@ export const ApplyLeaveScreen: React.FC = () => {
         durationType,
         startDate,
         endDate: durationType === 'FULL_DAY' ? endDate : startDate,
+        daysCount: breakdown.totalDays,
         reason,
         whatsappNoticeAcknowledged: ackWhatsapp,
       });
@@ -89,7 +197,7 @@ export const ApplyLeaveScreen: React.FC = () => {
           </Text>
 
           <Text className="text-xs text-slate-500 text-center max-w-[280px] leading-relaxed mb-4">
-            Your demo request has been added to the pending review queue.
+            Your request for {breakdown.totalDays} working day{breakdown.totalDays > 1 ? 's' : ''} has been added to the review queue.
           </Text>
 
           <View className="bg-amber-50 border border-amber-200 p-4 rounded-2xl mb-6 max-w-[320px]">
@@ -210,35 +318,125 @@ export const ApplyLeaveScreen: React.FC = () => {
             })}
           </View>
 
-          {/* Dates */}
+          {/* Interactive Date Pickers */}
           <Card className="mb-4">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Leave Schedule
+              </Text>
+              <View className="flex-row items-center gap-1">
+                <Ionicons name="shield-checkmark-outline" size={12} color="#059669" />
+                <Text className="text-[10px] text-emerald-700 font-semibold">
+                  Sundays Excluded (0 Deduction)
+                </Text>
+              </View>
+            </View>
+
             {durationType === 'FULL_DAY' ? (
               <View>
-                <Input
-                  label="Start Date (YYYY-MM-DD)"
-                  value={startDate}
-                  onChangeText={setStartDate}
-                  placeholder="2026-11-15"
-                  iconName="calendar-outline"
-                />
-                <Input
-                  label="End Date (YYYY-MM-DD)"
-                  value={endDate}
-                  onChangeText={setEndDate}
-                  placeholder="2026-11-16"
-                  iconName="calendar-outline"
-                />
+                {/* Start Date Field */}
+                <View className="mb-3">
+                  <Text className="text-xs font-bold text-slate-700 mb-1.5">
+                    Start Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={openStartDatePicker}
+                    activeOpacity={0.7}
+                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 px-3.5 py-3 rounded-xl"
+                  >
+                    <View className="flex-row items-center gap-2.5 flex-1">
+                      <View className="w-8 h-8 rounded-lg bg-blue-100 items-center justify-center">
+                        <Ionicons name="calendar" size={17} color="#2563EB" />
+                      </View>
+                      <View>
+                        <Text className="text-xs font-bold text-slate-900">
+                          {formatDisplayDate(startDate)}
+                        </Text>
+                        <Text className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          {startDate} (Tap to change)
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-down" size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* End Date Field */}
+                <View className="mb-3">
+                  <Text className="text-xs font-bold text-slate-700 mb-1.5">
+                    End Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={openEndDatePicker}
+                    activeOpacity={0.7}
+                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 px-3.5 py-3 rounded-xl"
+                  >
+                    <View className="flex-row items-center gap-2.5 flex-1">
+                      <View className="w-8 h-8 rounded-lg bg-blue-100 items-center justify-center">
+                        <Ionicons name="calendar" size={17} color="#2563EB" />
+                      </View>
+                      <View>
+                        <Text className="text-xs font-bold text-slate-900">
+                          {formatDisplayDate(endDate)}
+                        </Text>
+                        <Text className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          {endDate} (Tap to change)
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-down" size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Total Days Summary & Sunday Exclusion Notice */}
+                <View className="bg-blue-50/80 border border-blue-200/80 p-3 rounded-xl">
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-1.5">
+                      <Ionicons name="hourglass-outline" size={14} color="#2563EB" />
+                      <Text className="text-xs text-blue-900 font-semibold">Total Leave Deducted:</Text>
+                    </View>
+                    <Text className="text-sm font-black text-blue-700">
+                      {breakdown.totalDays} Working Day{breakdown.totalDays > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                  {breakdown.sundaysExcluded > 0 && (
+                    <Text className="text-[11px] text-emerald-700 font-semibold mt-1">
+                      ✓ {breakdown.sundaysExcluded} Sunday{breakdown.sundaysExcluded > 1 ? 's' : ''} in this date range excluded from leave deduction.
+                    </Text>
+                  )}
+                </View>
               </View>
             ) : (
               <View>
-                <Input
-                  label="Leave Date (YYYY-MM-DD)"
-                  value={startDate}
-                  onChangeText={setStartDate}
-                  placeholder="2026-11-15"
-                  iconName="calendar-outline"
-                />
-                <View className="bg-purple-50 border border-purple-200 p-3 rounded-xl flex-row items-center gap-2.5 mt-1">
+                {/* Single Leave Date Field */}
+                <View className="mb-3">
+                  <Text className="text-xs font-bold text-slate-700 mb-1.5">
+                    Leave Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={openStartDatePicker}
+                    activeOpacity={0.7}
+                    className="flex-row items-center justify-between bg-slate-50 border border-slate-200 px-3.5 py-3 rounded-xl"
+                  >
+                    <View className="flex-row items-center gap-2.5 flex-1">
+                      <View className="w-8 h-8 rounded-lg bg-purple-100 items-center justify-center">
+                        <Ionicons name="calendar" size={17} color="#7C3AED" />
+                      </View>
+                      <View>
+                        <Text className="text-xs font-bold text-slate-900">
+                          {formatDisplayDate(startDate)}
+                        </Text>
+                        <Text className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          {startDate} (Tap to change)
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-down" size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Shift Details */}
+                <View className="bg-purple-50 border border-purple-200 p-3 rounded-xl flex-row items-center gap-2.5">
                   <Ionicons name="time" size={18} color="#7C3AED" />
                   <View className="flex-1">
                     <Text className="text-xs font-bold text-purple-900">
@@ -249,7 +447,7 @@ export const ApplyLeaveScreen: React.FC = () => {
                     <Text className="text-[11px] text-purple-700 mt-0.5">
                       {durationType === 'FIRST_HALF'
                         ? '10:00 AM – 02:00 PM (Counted as 0.5 Day Leave)'
-                        : '02:00 PM – 07:00 PM (Counted as 0.5 Day Leave)'}
+                        : '03:00 PM – 07:00 PM (Counted as 0.5 Day Leave)'}
                     </Text>
                   </View>
                 </View>
@@ -297,6 +495,22 @@ export const ApplyLeaveScreen: React.FC = () => {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Date Picker Modal with Sunday Exclusion */}
+      <DatePickerModal
+        visible={showDatePicker}
+        onClose={() => setShowDatePicker(false)}
+        onSelectDate={handleDatePicked}
+        selectedDate={datePickerField === 'START' ? startDate : endDate}
+        minDate={datePickerField === 'START' ? todayStr : (startDate || todayStr)}
+        disableSundays={true}
+        title={
+          datePickerField === 'START'
+            ? (durationType === 'FULL_DAY' ? 'Select Start Date' : 'Select Leave Date')
+            : 'Select End Date'
+        }
+        subtitle="Sundays are weekly offs (Cannot be selected)"
+      />
     </View>
   );
 };

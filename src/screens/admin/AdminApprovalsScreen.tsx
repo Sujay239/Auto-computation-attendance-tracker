@@ -12,12 +12,15 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { adminService } from '../../services/adminService';
+import { Avatar } from '../../components/common/Avatar';
 import { AdminLeaveApprovalItem, AdminOvertimeApprovalItem } from '../../types/admin';
 
 export const AdminApprovalsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'LEAVE' | 'OVERTIME'>('LEAVE');
   const [statusFilter, setStatusFilter] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING');
@@ -40,8 +43,8 @@ export const AdminApprovalsScreen: React.FC = () => {
   const fetchApprovals = useCallback(async () => {
     setLoading(true);
     const [leaveRes, otRes] = await Promise.all([
-      adminService.getAllLeaveRequests(statusFilter === 'ALL' ? 'ALL' : statusFilter),
-      adminService.getAllOvertimeRequests(statusFilter === 'ALL' ? 'ALL' : statusFilter),
+      adminService.getAllLeaveRequests('ALL'),
+      adminService.getAllOvertimeRequests('ALL'),
     ]);
 
     if (leaveRes.success && leaveRes.requests) {
@@ -52,7 +55,7 @@ export const AdminApprovalsScreen: React.FC = () => {
     }
     setLoading(false);
     setRefreshing(false);
-  }, [statusFilter]);
+  }, []);
 
   useEffect(() => {
     fetchApprovals();
@@ -107,6 +110,13 @@ export const AdminApprovalsScreen: React.FC = () => {
   const pendingLeavesCount = leaves.filter((l) => l.status === 'PENDING').length;
   const pendingOvertimesCount = overtimes.filter((o) => o.status === 'PENDING').length;
 
+  const filteredLeaves = leaves.filter(
+    (l) => statusFilter === 'ALL' || l.status === statusFilter
+  );
+  const filteredOvertimes = overtimes.filter(
+    (o) => statusFilter === 'ALL' || o.status === statusFilter
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       {/* Top Safe Area Header */}
@@ -120,12 +130,24 @@ export const AdminApprovalsScreen: React.FC = () => {
           borderBottomColor: '#E2E8F0',
         }}
       >
-        <Text className="text-xl font-black text-slate-900">
-          Approvals Management Hub
-        </Text>
-        <Text className="text-xs text-slate-500 font-medium">
-          Review employee leave applications & overtime compensation claims
-        </Text>
+        <View className="flex-row items-center gap-3">
+          <TouchableOpacity
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(admin)/home' as any))}
+            activeOpacity={0.7}
+            className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="arrow-back" size={20} color="#0F172A" />
+          </TouchableOpacity>
+          <View className="flex-1">
+            <Text className="text-xl font-black text-slate-900" numberOfLines={1}>
+              Approvals Management Hub
+            </Text>
+            <Text className="text-xs text-slate-500 font-medium" numberOfLines={1}>
+              Review employee leave applications & overtime claims
+            </Text>
+          </View>
+        </View>
 
         {/* Top Tab Switch (Leave vs Overtime) */}
         <View className="flex-row rounded-2xl bg-slate-100 p-1 mt-3 border border-slate-200">
@@ -186,6 +208,11 @@ export const AdminApprovalsScreen: React.FC = () => {
         <View className="flex-row gap-2 mt-3">
           {(['PENDING', 'APPROVED', 'REJECTED', 'ALL'] as const).map((status) => {
             const isSelected = statusFilter === status;
+            const count =
+              activeTab === 'LEAVE'
+                ? (status === 'ALL' ? leaves.length : leaves.filter((l) => l.status === status).length)
+                : (status === 'ALL' ? overtimes.length : overtimes.filter((o) => o.status === status).length);
+
             return (
               <TouchableOpacity
                 key={status}
@@ -193,7 +220,7 @@ export const AdminApprovalsScreen: React.FC = () => {
                 activeOpacity={0.7}
                 style={{
                   backgroundColor: isSelected ? '#4F46E5' : '#F1F5F9',
-                  paddingHorizontal: 12,
+                  paddingHorizontal: 11,
                   paddingVertical: 5,
                   borderRadius: 14,
                 }}
@@ -205,7 +232,7 @@ export const AdminApprovalsScreen: React.FC = () => {
                     fontWeight: isSelected ? '700' : '600',
                   }}
                 >
-                  {status === 'ALL' ? 'All' : status[0] + status.slice(1).toLowerCase()}
+                  {status === 'ALL' ? 'All' : status[0] + status.slice(1).toLowerCase()} ({count})
                 </Text>
               </TouchableOpacity>
             );
@@ -230,7 +257,7 @@ export const AdminApprovalsScreen: React.FC = () => {
           /* ========================================================================= */
           /* TAB 1: LEAVE REQUESTS */
           /* ========================================================================= */
-          leaves.length === 0 ? (
+          filteredLeaves.length === 0 ? (
             <View className="py-16 items-center justify-center bg-white rounded-2xl border border-slate-200 p-6">
               <Ionicons name="calendar-outline" size={40} color="#94A3B8" />
               <Text className="text-sm font-bold text-slate-700 mt-2">
@@ -239,7 +266,7 @@ export const AdminApprovalsScreen: React.FC = () => {
             </View>
           ) : (
             <View className="space-y-3 gap-3">
-              {leaves.map((req) => {
+              {filteredLeaves.map((req) => {
                 const isPending = req.status === 'PENDING';
                 return (
                   <View
@@ -249,19 +276,17 @@ export const AdminApprovalsScreen: React.FC = () => {
                     {/* Header: Employee & Status */}
                     <View className="flex-row items-center justify-between mb-2">
                       <View className="flex-row items-center gap-2.5 flex-1">
-                        <View className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-200 items-center justify-center">
-                          <Text className="text-xs font-black text-indigo-700">
-                            {req.employeeName
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .substring(0, 2)
-                              .toUpperCase()}
-                          </Text>
-                        </View>
+                        <Avatar
+                          uri={req.avatarUrl || (req as any).avatar_url}
+                          name={req.employeeName || req.employeeId || 'Staff'}
+                          size={38}
+                          showStatusDot={false}
+                          fallbackBg="#EEF2FF"
+                          fallbackTextColor="#4338CA"
+                        />
                         <View className="flex-1">
                           <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
-                            {req.employeeName}
+                            {req.employeeName || req.employeeId}
                           </Text>
                           <Text className="text-[11px] text-slate-500 font-medium">
                             {req.employeeId}
@@ -335,7 +360,7 @@ export const AdminApprovalsScreen: React.FC = () => {
                     {isPending ? (
                       <View className="flex-row items-center gap-2 pt-1">
                         <TouchableOpacity
-                          onPress={() => handleOpenDecision('LEAVE', req.id, 'REJECT', req.employeeName)}
+                          onPress={() => handleOpenDecision('LEAVE', req.id, 'REJECT', req.employeeName || req.employeeId)}
                           activeOpacity={0.8}
                           className="flex-1 py-2 rounded-xl bg-rose-50 border border-rose-200 items-center justify-center flex-row gap-1"
                         >
@@ -344,7 +369,7 @@ export const AdminApprovalsScreen: React.FC = () => {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                          onPress={() => handleOpenDecision('LEAVE', req.id, 'APPROVE', req.employeeName)}
+                          onPress={() => handleOpenDecision('LEAVE', req.id, 'APPROVE', req.employeeName || req.employeeId)}
                           activeOpacity={0.8}
                           className="flex-1 py-2 rounded-xl bg-emerald-600 items-center justify-center flex-row gap-1 shadow-xs"
                         >
@@ -353,12 +378,30 @@ export const AdminApprovalsScreen: React.FC = () => {
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <View className="flex-row items-center justify-between pt-1">
-                        <Text className="text-[10px] text-slate-400 font-medium">
-                          Reviewed by {req.approvedOrRejectedBy || 'Admin'} on {req.reviewedOn || 'today'}
-                        </Text>
+                      <View className="pt-1">
+                        <View className="flex-row items-center justify-between">
+                          <Text className="text-[10px] text-slate-400 font-medium">
+                            Reviewed by {req.approvedOrRejectedBy || 'Admin'} on {req.reviewedOn || 'today'}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() =>
+                              handleOpenDecision(
+                                'LEAVE',
+                                req.id,
+                                req.status === 'APPROVED' ? 'REJECT' : 'APPROVE',
+                                req.employeeName || req.employeeId
+                              )
+                            }
+                            activeOpacity={0.7}
+                            className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200"
+                          >
+                            <Text className="text-[10px] font-bold text-slate-600">
+                              Change to {req.status === 'APPROVED' ? 'Reject' : 'Approve'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                         {req.comments && (
-                          <Text className="text-[10px] text-slate-500 italic">
+                          <Text className="text-[10px] text-slate-500 italic mt-0.5">
                             Note: {req.comments}
                           </Text>
                         )}
@@ -373,7 +416,7 @@ export const AdminApprovalsScreen: React.FC = () => {
           /* ========================================================================= */
           /* TAB 2: OVERTIME REQUESTS */
           /* ========================================================================= */
-          overtimes.length === 0 ? (
+          filteredOvertimes.length === 0 ? (
             <View className="py-16 items-center justify-center bg-white rounded-2xl border border-slate-200 p-6">
               <Ionicons name="time-outline" size={40} color="#94A3B8" />
               <Text className="text-sm font-bold text-slate-700 mt-2">
@@ -382,7 +425,7 @@ export const AdminApprovalsScreen: React.FC = () => {
             </View>
           ) : (
             <View className="space-y-3 gap-3">
-              {overtimes.map((ot) => {
+              {filteredOvertimes.map((ot) => {
                 const isPending = ot.status === 'PENDING';
                 return (
                   <View
@@ -487,9 +530,32 @@ export const AdminApprovalsScreen: React.FC = () => {
                       </View>
                     ) : (
                       <View className="pt-1">
-                        <Text className="text-[10px] text-slate-400 font-medium">
-                          Reviewed by {ot.status === 'APPROVED' ? 'Admin (Credit Active)' : 'Admin (Rejected)'}
-                        </Text>
+                        <View className="flex-row items-center justify-between">
+                          <Text className="text-[10px] text-slate-400 font-medium">
+                            Reviewed by {ot.status === 'APPROVED' ? 'Admin (Credit Active)' : 'Admin (Rejected)'}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() =>
+                              handleOpenDecision(
+                                'OVERTIME',
+                                ot.id,
+                                ot.status === 'APPROVED' ? 'REJECT' : 'APPROVE',
+                                ot.employeeName || ot.employeeId
+                              )
+                            }
+                            activeOpacity={0.7}
+                            className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200"
+                          >
+                            <Text className="text-[10px] font-bold text-slate-600">
+                              Change to {ot.status === 'APPROVED' ? 'Reject' : 'Approve'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                        {ot.notes && (
+                          <Text className="text-[10px] text-slate-500 italic mt-0.5">
+                            Note: {ot.notes}
+                          </Text>
+                        )}
                       </View>
                     )}
                   </View>

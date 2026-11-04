@@ -62,6 +62,7 @@ export const OvertimeScreen: React.FC = () => {
       <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF' }}>
         <Header
           title="Overtime Management"
+          showBack
           subtitle="Extra Hours, Reimbursement & Early Leave"
         />
       </View>

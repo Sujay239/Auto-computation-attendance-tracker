@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 interface HeaderProps {
@@ -14,17 +14,34 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
-  showBack = false,
+  showBack,
   onBackPress,
   rightAction,
 }) => {
   const router = useRouter();
+  const pathname = usePathname();
+
+  // If showBack is not explicitly specified, show it on all sub-screens
+  const isRootScreen =
+    pathname === '/(tabs)/home' ||
+    pathname === '/(admin)/home' ||
+    pathname === '/login' ||
+    pathname === '/index' ||
+    pathname === '/';
+
+  const shouldDisplayBack = showBack !== undefined ? showBack : !isRootScreen;
 
   const handleBack = () => {
     if (onBackPress) {
       onBackPress();
-    } else {
+      return;
+    }
+
+    if (router.canGoBack()) {
       router.back();
+    } else {
+      const isUnderAdmin = pathname?.includes('admin');
+      router.replace((isUnderAdmin ? '/(admin)/home' : '/(tabs)/home') as any);
     }
   };
 
@@ -38,12 +55,12 @@ export const Header: React.FC<HeaderProps> = ({
       className="flex-row items-center justify-between py-3 px-4 shadow-2xs"
     >
       <View className="flex-row items-center flex-1">
-        {showBack && (
+        {shouldDisplayBack && (
           <TouchableOpacity
             onPress={handleBack}
             activeOpacity={0.7}
             className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center mr-3"
-            accessibilityLabel="Back"
+            accessibilityLabel="Go back to previous page"
           >
             <Ionicons name="arrow-back" size={20} color="#0F172A" />
           </TouchableOpacity>

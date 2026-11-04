@@ -1,5 +1,5 @@
 {
-  "name": "Auto Computation - Profile, Avatar & Password Management (Profile Management)",
+  "name": "Auto Computation - Profile Management & Avatar",
   "nodes": [
     {
       "parameters": {
@@ -77,10 +77,10 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst callerId = String(claims.sub).trim();\nconst callerRole = String(claims.role || 'EMPLOYEE').toUpperCase().trim();\n\nconst webhookItem = $('Webhook - POST /profile-management').first();\nconst body = webhookItem.json ? (webhookItem.json.body || {}) : {};\nconst binary = webhookItem.binary || {};\n\nconst action = String(body.action || 'GET_PROFILE').toUpperCase().trim();\n\n// 1. Handle Password Change\nif (action === 'CHANGE_PASSWORD') {\n  const oldPass = String(body.oldPassword || '').trim();\n  const newPass = String(body.newPassword || '').trim();\n  if (!oldPass || !newPass) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"Both current password and new password are required.\"\n      }\n    }];\n  }\n  if (newPass.length < 6) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"New password must be at least 6 characters long.\"\n      }\n    }];\n  }\n  return [{\n    json: {\n      valid: true,\n      action: 'CHANGE_PASSWORD',\n      isPasswordChange: true,\n      callerId: callerId,\n      callerRole: callerRole,\n      oldPassword: oldPass,\n      newPassword: newPass,\n      notifId: `notif-${Date.now()}-${callerId}`\n    }\n  }];\n}\n\n// 2. Handle Avatar Upload / Base64 Conversion\nlet avatarBase64 = null;\n\n// Case A: Binary file uploaded via multipart/form-data\nconst binaryKeys = Object.keys(binary);\nif (binaryKeys.length > 0) {\n  const fileKey = binaryKeys[0];\n  const binaryFile = binary[fileKey];\n  if (binaryFile && binaryFile.data) {\n    const mime = binaryFile.mimeType || 'image/jpeg';\n    avatarBase64 = `data:${mime};base64,${binaryFile.data}`;\n  }\n}\n\n// Case B: Base64 string or image provided in JSON body\nif (!avatarBase64) {\n  const rawImg = body.avatar || body.avatarBase64 || body.imageBase64 || body.image || body.avatarUrl || null;\n  if (rawImg && typeof rawImg === 'string' && rawImg.trim().length > 0) {\n    const trimmed = rawImg.trim();\n    if (trimmed.startsWith('data:image/')) {\n      avatarBase64 = trimmed;\n    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {\n      avatarBase64 = trimmed;\n    } else {\n      // Convert raw base64 string into standard base64 data URI\n      avatarBase64 = `data:image/jpeg;base64,${trimmed}`;\n    }\n  }\n}\n\nif (action === 'UPDATE_AVATAR') {\n  if (!avatarBase64) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"No image provided. Please provide image binary or base64 string.\"\n      }\n    }];\n  }\n  return [{\n    json: {\n      valid: true,\n      action: 'UPDATE_AVATAR',\n      isPasswordChange: false,\n      callerId: callerId,\n      callerRole: callerRole,\n      avatarUrl: avatarBase64,\n      escapedAvatar: avatarBase64.replace(/'/g, \"''\"),\n      notifId: `notif-${Date.now()}-${callerId}`\n    }\n  }];\n}\n\n// 3. Handle General Profile Update\nif (action === 'UPDATE_PROFILE') {\n  const phone = body.phone ? String(body.phone).trim() : null;\n  return [{\n    json: {\n      valid: true,\n      action: 'UPDATE_PROFILE',\n      isPasswordChange: false,\n      callerId: callerId,\n      callerRole: callerRole,\n      phone: phone,\n      avatarUrl: avatarBase64,\n      escapedAvatar: avatarBase64 ? avatarBase64.replace(/'/g, \"''\") : null,\n      notifId: `notif-${Date.now()}-${callerId}`\n    }\n  }];\n}\n\n// 4. Default: Get Profile\nreturn [{\n  json: {\n    valid: true,\n    action: 'GET_PROFILE',\n    isPasswordChange: false,\n    callerId: callerId,\n    callerRole: callerRole\n  }\n}];"
+        "jsCode": "const inputData = $input.first().json || {};\n\nif (inputData.error) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or expired authentication token. Outsiders are not permitted.\"\n    }\n  }];\n}\n\nconst claims = inputData.payload || inputData;\n\nif (!claims || !claims.sub) {\n  return [{\n    json: {\n      valid: false,\n      statusCode: 401,\n      error: \"Invalid or malformed authentication token. Please log in again.\"\n    }\n  }];\n}\n\nconst callerId = String(claims.sub).trim();\nconst callerRole = String(claims.role || 'EMPLOYEE').toUpperCase().trim();\n\nconst webhookItem = $('Webhook - POST /profile-management').first() || {};\nconst rawBody = webhookItem.json ? (webhookItem.json.body || webhookItem.json) : {};\nconst binary = webhookItem.binary || {};\n\nlet body = rawBody;\nif (typeof rawBody === 'string') {\n  try {\n    body = JSON.parse(rawBody);\n  } catch (e) {\n    body = {};\n  }\n}\n\nconst action = String(body.action || 'GET_PROFILE').toUpperCase().trim();\nconst notifId = 'notif-' + Date.now() + '-' + callerId;\n\n// -------------------------------------------------------------\n// 1. ACTION: CHANGE_PASSWORD\n// -------------------------------------------------------------\nif (action === 'CHANGE_PASSWORD') {\n  const oldPass = String(body.oldPassword || '').trim();\n  const newPass = String(body.newPassword || '').trim();\n\n  if (!oldPass || !newPass) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"Both current password and new password are required.\"\n      }\n    }];\n  }\n\n  if (newPass.length < 6) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"New password must be at least 6 characters long.\"\n      }\n    }];\n  }\n\n  const escapedOldPass = oldPass.replace(/'/g, \"''\");\n  const escapedNewPass = newPass.replace(/'/g, \"''\");\n\n  const sql = `\n    WITH auth_check AS (\n      SELECT \n        id, \n        (password_hash = crypt('${escapedOldPass}', password_hash) OR password_hash = '${escapedOldPass}') AS is_valid\n      FROM employees\n      WHERE id = '${callerId}'\n    ),\n    upd AS (\n      UPDATE employees\n      SET \n        password_hash = crypt('${escapedNewPass}', gen_salt('bf', 8)),\n        updated_at = CURRENT_TIMESTAMP\n      WHERE id = '${callerId}'\n        AND (SELECT is_valid FROM auth_check) = TRUE\n      RETURNING id, email, first_name, last_name, updated_at::TEXT\n    ),\n    ins_notif AS (\n      INSERT INTO notifications (\n        id, employee_id, category, title, message, action_route, priority, is_read\n      )\n      SELECT \n        '${notifId}',\n        '${callerId}',\n        'COMPANY_ANNOUNCEMENT',\n        'Password Changed Successfully',\n        'Your account password was updated. If you did not perform this change, contact company operations immediately.',\n        '/(tabs)/profile',\n        'HIGH',\n        FALSE\n      FROM upd\n      RETURNING id\n    )\n    SELECT \n      'CHANGE_PASSWORD' AS action_performed,\n      (SELECT is_valid FROM auth_check) AS is_old_password_correct,\n      row_to_json(upd.*) AS updated_employee\n    FROM (SELECT 1) dummy\n    LEFT JOIN upd ON true;\n  `;\n\n  return [{\n    json: {\n      valid: true,\n      action: 'CHANGE_PASSWORD',\n      sqlQuery: sql\n    }\n  }];\n}\n\n// -------------------------------------------------------------\n// Extract Avatar Base64 or Multipart Binary\n// -------------------------------------------------------------\nlet avatarBase64 = null;\nconst binaryKeys = Object.keys(binary);\nif (binaryKeys.length > 0) {\n  const fileKey = binaryKeys[0];\n  const binaryFile = binary[fileKey];\n  if (binaryFile && binaryFile.data) {\n    const mime = binaryFile.mimeType || 'image/jpeg';\n    avatarBase64 = `data:${mime};base64,${binaryFile.data}`;\n  }\n}\n\nif (!avatarBase64) {\n  const rawImg = body.avatar || body.avatarBase64 || body.imageBase64 || body.image || body.avatarUrl || null;\n  if (rawImg && typeof rawImg === 'string' && rawImg.trim().length > 0) {\n    const trimmed = rawImg.trim();\n    if (trimmed.startsWith('data:image/') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {\n      avatarBase64 = trimmed;\n    } else {\n      avatarBase64 = `data:image/jpeg;base64,${trimmed}`;\n    }\n  }\n}\n\n// -------------------------------------------------------------\n// 2. ACTION: UPDATE_AVATAR\n// -------------------------------------------------------------\nif (action === 'UPDATE_AVATAR') {\n  if (!avatarBase64) {\n    return [{\n      json: {\n        valid: false,\n        statusCode: 400,\n        error: \"No image provided. Please provide image binary or base64 string.\"\n      }\n    }];\n  }\n\n  const escapedAvatar = avatarBase64.replace(/'/g, \"''\");\n\n  const sql = `\n    WITH upd AS (\n      UPDATE employees\n      SET \n        avatar_url = '${escapedAvatar}',\n        updated_at = CURRENT_TIMESTAMP\n      WHERE id = '${callerId}'\n      RETURNING \n        id, first_name, last_name, email, phone, avatar_url, \n        designation, joining_date::TEXT, employment_type, work_location, role, is_active\n    ),\n    ins_notif AS (\n      INSERT INTO notifications (\n        id, employee_id, category, title, message, action_route, priority, is_read\n      )\n      SELECT \n        '${notifId}',\n        '${callerId}',\n        'COMPANY_ANNOUNCEMENT',\n        'Profile Photo Updated',\n        'Your profile avatar was successfully updated.',\n        '/(tabs)/profile',\n        'NORMAL',\n        FALSE\n      FROM upd\n      RETURNING id\n    )\n    SELECT \n      'UPDATE_AVATAR' AS action_performed,\n      row_to_json(upd.*) AS employee \n    FROM upd;\n  `;\n\n  return [{\n    json: {\n      valid: true,\n      action: 'UPDATE_AVATAR',\n      sqlQuery: sql\n    }\n  }];\n}\n\n// -------------------------------------------------------------\n// 3. ACTION: UPDATE_PROFILE\n// -------------------------------------------------------------\nif (action === 'UPDATE_PROFILE') {\n  const phone = body.phone ? String(body.phone).trim() : null;\n  const escapedPhone = phone ? phone.replace(/'/g, \"''\") : null;\n  const escapedAvatar = avatarBase64 ? avatarBase64.replace(/'/g, \"''\") : null;\n\n  const sql = `\n    WITH upd AS (\n      UPDATE employees\n      SET \n        phone = COALESCE(NULLIF('${escapedPhone || ''}', ''), phone),\n        avatar_url = COALESCE(NULLIF('${escapedAvatar || ''}', ''), avatar_url),\n        updated_at = CURRENT_TIMESTAMP\n      WHERE id = '${callerId}'\n      RETURNING \n        id, first_name, last_name, email, phone, avatar_url, \n        designation, joining_date::TEXT, employment_type, work_location, role, is_active\n    )\n    SELECT \n      'UPDATE_PROFILE' AS action_performed,\n      row_to_json(upd.*) AS employee \n    FROM upd;\n  `;\n\n  return [{\n    json: {\n      valid: true,\n      action: 'UPDATE_PROFILE',\n      sqlQuery: sql\n    }\n  }];\n}\n\n// -------------------------------------------------------------\n// 4. ACTION: GET_PROFILE (Default)\n// -------------------------------------------------------------\nconst sql = `\n  SELECT \n    'GET_PROFILE' AS action_performed,\n    row_to_json(e.*) AS employee\n  FROM (\n    SELECT \n      id, first_name, last_name, email, phone, avatar_url, \n      designation, joining_date::TEXT, employment_type, work_location, role, is_active\n    FROM employees\n    WHERE id = '${callerId}'\n    LIMIT 1\n  ) e;\n`;\n\nreturn [{\n  json: {\n    valid: true,\n    action: 'GET_PROFILE',\n    sqlQuery: sql\n  }\n}];"
       },
       "id": "prof1a2b-0004-4000-8000-000000000004",
-      "name": "Code - Parse Claims, Avatar Base64 & Action",
+      "name": "Code - Process Profile Request & Generate SQL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -100,7 +100,7 @@
         }
       },
       "id": "prof1a2b-0005-4000-8000-000000000005",
-      "name": "If - Valid Auth?",
+      "name": "If - Valid Request?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
@@ -110,74 +110,17 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{ $json.isPasswordChange }}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "prof1a2b-0006-4000-8000-000000000006",
-      "name": "If - Is Password Change?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        1480,
-        140
-      ]
-    },
-    {
-      "parameters": {
         "operation": "executeQuery",
-        "query": "WITH auth_check AS (\n  SELECT \n    id, \n    (password_hash = crypt('{{ $json.oldPassword }}', password_hash)) AS is_valid\n  FROM employees\n  WHERE id = '{{ $json.callerId }}'\n),\nupd AS (\n  UPDATE employees\n  SET \n    password_hash = crypt('{{ $json.newPassword }}', gen_salt('bf', 8)),\n    updated_at = CURRENT_TIMESTAMP\n  WHERE id = '{{ $json.callerId }}'\n    AND (SELECT is_valid FROM auth_check) = TRUE\n  RETURNING id, email, first_name, last_name, updated_at::TEXT\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '{{ $json.notifId }}',\n    '{{ $json.callerId }}',\n    'COMPANY_ANNOUNCEMENT',\n    'Password Changed Successfully',\n    'Your account password was updated. If you did not perform this change, contact company operations immediately.',\n    '/(tabs)/profile',\n    'HIGH',\n    FALSE\n  FROM upd\n  RETURNING id\n)\nSELECT \n  (SELECT is_valid FROM auth_check) AS is_old_password_correct,\n  row_to_json(upd.*) AS updated_employee\nFROM (SELECT 1) dummy\nLEFT JOIN upd ON true;",
-        "options": {}
-      },
-      "id": "prof1a2b-0007-4000-8000-000000000007",
-      "name": "Postgres - Verify & Update Password Hash",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        1700,
-        60
-      ],
-      "alwaysOutputData": true,
-      "onError": "continueRegularOutput",
-      "credentials": {
-        "postgres": {
-          "id": "postgres_credentials_placeholder",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "language": "javaScript",
-        "jsCode": "const items = $input.all();\nconst row = (items.length > 0 && items[0].json) ? items[0].json : {};\n\nif (row.is_old_password_correct !== true) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 400,\n      error: \"Current password is incorrect. Please verify your password and try again.\"\n    }\n  }];\n}\n\nif (!row.updated_employee) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 500,\n      error: \"Failed to update password in database.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: \"Password changed successfully. Your new credentials are now active.\",\n    updatedAt: row.updated_employee.updated_at\n  }\n}];"
-      },
-      "id": "prof1a2b-0008-4000-8000-000000000008",
-      "name": "Code - Format Password Response",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1920,
-        60
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "={{ $json.action === 'UPDATE_AVATAR' ? `\nWITH upd AS (\n  UPDATE employees\n  SET \n    avatar_url = '` + $json.escapedAvatar + `',\n    updated_at = CURRENT_TIMESTAMP\n  WHERE id = '` + $json.callerId + `'\n  RETURNING \n    id, first_name, last_name, email, phone, avatar_url, \n    designation, joining_date::TEXT, employment_type, work_location, role, is_active\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '` + $json.notifId + `',\n    '` + $json.callerId + `',\n    'COMPANY_ANNOUNCEMENT',\n    'Profile Photo Updated',\n    'Your profile avatar was successfully updated.',\n    '/(tabs)/profile',\n    'NORMAL',\n    FALSE\n  FROM upd\n  RETURNING id\n)\nSELECT row_to_json(upd.*) AS employee FROM upd;\n` : ($json.action === 'UPDATE_PROFILE' ? `\nWITH upd AS (\n  UPDATE employees\n  SET \n    phone = COALESCE(NULLIF('` + ($json.phone || '') + `', ''), phone),\n    avatar_url = COALESCE(NULLIF('` + ($json.escapedAvatar || '') + `', ''), avatar_url),\n    updated_at = CURRENT_TIMESTAMP\n  WHERE id = '` + $json.callerId + `'\n  RETURNING \n    id, first_name, last_name, email, phone, avatar_url, \n    designation, joining_date::TEXT, employment_type, work_location, role, is_active\n)\nSELECT row_to_json(upd.*) AS employee FROM upd;\n` : `\nSELECT row_to_json(e.*) AS employee\nFROM (\n  SELECT \n    id, first_name, last_name, email, phone, avatar_url, \n    designation, joining_date::TEXT, employment_type, work_location, role, is_active\n  FROM employees\n  WHERE id = '` + $json.callerId + `'\n  LIMIT 1\n) e;\n`) }}",
+        "query": "={{ $json.sqlQuery }}",
         "options": {}
       },
       "id": "prof1a2b-0009-4000-8000-000000000009",
-      "name": "Postgres - Get or Update Profile / Avatar",
+      "name": "Postgres - Execute Profile Action",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1700,
-        220
+        1480,
+        140
       ],
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
@@ -191,15 +134,15 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst emp = data.employee || data;\n\nif (!emp || !emp.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: \"Employee record not found or update failed.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: \"Profile retrieved/updated successfully.\",\n    employee: {\n      id: emp.id,\n      firstName: emp.first_name,\n      lastName: emp.last_name,\n      email: emp.email,\n      phone: emp.phone,\n      avatarUrl: emp.avatar_url || null,\n      designation: emp.designation,\n      joiningDate: emp.joining_date,\n      employmentType: emp.employment_type,\n      workLocation: emp.work_location,\n      role: emp.role,\n      isActive: emp.is_active\n    }\n  }\n}];"
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst action = data.action_performed || 'GET_PROFILE';\n\n// 1. Password Change Response\nif (action === 'CHANGE_PASSWORD') {\n  if (data.is_old_password_correct !== true) {\n    return [{\n      json: {\n        success: false,\n        statusCode: 400,\n        error: \"Current password is incorrect. Please verify your password and try again.\"\n      }\n    }];\n  }\n\n  if (!data.updated_employee) {\n    return [{\n      json: {\n        success: false,\n        statusCode: 500,\n        error: \"Failed to update password in database.\"\n      }\n    }];\n  }\n\n  return [{\n    json: {\n      success: true,\n      statusCode: 200,\n      message: \"Password changed successfully. Your new credentials are now active.\",\n      updatedAt: data.updated_employee.updated_at\n    }\n  }];\n}\n\n// 2. Profile / Avatar Response\nconst emp = data.employee;\n\nif (!emp || !emp.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: \"Employee record not found or update failed.\"\n    }\n  }];\n}\n\nconst message = (action === 'UPDATE_AVATAR')\n  ? \"Profile photo updated successfully.\"\n  : (action === 'UPDATE_PROFILE' ? \"Profile updated successfully.\" : \"Profile retrieved successfully.\");\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: message,\n    employee: {\n      id: emp.id,\n      firstName: emp.first_name,\n      lastName: emp.last_name,\n      email: emp.email,\n      phone: emp.phone,\n      avatarUrl: emp.avatar_url || null,\n      designation: emp.designation,\n      joiningDate: typeof emp.joining_date === 'string' ? emp.joining_date.split('T')[0] : emp.joining_date,\n      employmentType: emp.employment_type || 'Full-time',\n      workLocation: emp.work_location || 'Chinar Park, Teghoria, Kolkata (In-Office)',\n      role: emp.role || 'EMPLOYEE',\n      isActive: emp.is_active\n    }\n  }\n}];"
       },
       "id": "prof1a2b-0010-4000-8000-000000000010",
       "name": "Code - Format Profile Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1920,
-        220
+        1700,
+        140
       ]
     },
     {
@@ -214,12 +157,12 @@
         }
       },
       "id": "prof1a2b-0011-4000-8000-000000000011",
-      "name": "If - Password Change Success?",
+      "name": "If - Success?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        2140,
-        60
+        1920,
+        140
       ]
     },
     {
@@ -243,14 +186,14 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        2360,
-        140
+        2140,
+        100
       ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Profile operation failed.\"\n}) }}",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  statusCode: $json.statusCode || 400,\n  error: $json.error || \"Profile request failed.\"\n}) }}",
         "options": {
           "responseCode": "={{ $json.statusCode || 400 }}",
           "responseHeaders": {
@@ -268,12 +211,11 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1260,
-        420
+        2140,
+        300
       ]
     }
   ],
-  "pinData": {},
   "connections": {
     "Webhook - POST /profile-management": {
       "main": [
@@ -319,29 +261,29 @@
       "main": [
         [
           {
-            "node": "Code - Parse Claims, Avatar Base64 & Action",
+            "node": "Code - Process Profile Request & Generate SQL",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Code - Parse Claims, Avatar Base64 & Action": {
+    "Code - Process Profile Request & Generate SQL": {
       "main": [
         [
           {
-            "node": "If - Valid Auth?",
+            "node": "If - Valid Request?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "If - Valid Auth?": {
+    "If - Valid Request?": {
       "main": [
         [
           {
-            "node": "If - Is Password Change?",
+            "node": "Postgres - Execute Profile Action",
             "type": "main",
             "index": 0
           }
@@ -355,65 +297,7 @@
         ]
       ]
     },
-    "If - Is Password Change?": {
-      "main": [
-        [
-          {
-            "node": "Postgres - Verify & Update Password Hash",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Postgres - Get or Update Profile / Avatar",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Postgres - Verify & Update Password Hash": {
-      "main": [
-        [
-          {
-            "node": "Code - Format Password Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Format Password Response": {
-      "main": [
-        [
-          {
-            "node": "If - Password Change Success?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "If - Password Change Success?": {
-      "main": [
-        [
-          {
-            "node": "Respond 200 - Success",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond Error - 400/401",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Postgres - Get or Update Profile / Avatar": {
+    "Postgres - Execute Profile Action": {
       "main": [
         [
           {
@@ -428,7 +312,25 @@
       "main": [
         [
           {
+            "node": "If - Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Success?": {
+      "main": [
+        [
+          {
             "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error - 400/401",
             "type": "main",
             "index": 0
           }
@@ -436,25 +338,7 @@
       ]
     }
   },
-  "active": true,
   "settings": {
     "executionOrder": "v1"
-  },
-  "tags": [
-    {
-      "name": "Auto Computation"
-    },
-    {
-      "name": "Profile & Security"
-    },
-    {
-      "name": "Avatar Base64"
-    },
-    {
-      "name": "pgcrypto"
-    },
-    {
-      "name": "JWT Security"
-    }
-  ]
+  }
 }

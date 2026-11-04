@@ -14,12 +14,14 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { adminService } from '../../services/adminService';
 import { HolidayItem, NewHolidayInput } from '../../types/admin';
 
 export const AdminHolidaysScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -151,21 +153,31 @@ export const AdminHolidaysScreen: React.FC = () => {
         }}
       >
         <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-xl font-black text-slate-900">
-              Corporate Holidays
-            </Text>
-            <Text className="text-xs text-slate-500 font-medium">
-              Official gazetted holidays & office non-working days
-            </Text>
+          <View className="flex-row items-center gap-3 flex-1 mr-2">
+            <TouchableOpacity
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/(admin)/home' as any))}
+              activeOpacity={0.7}
+              className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center"
+              accessibilityLabel="Back"
+            >
+              <Ionicons name="arrow-back" size={20} color="#0F172A" />
+            </TouchableOpacity>
+            <View className="flex-1">
+              <Text className="text-xl font-black text-slate-900" numberOfLines={1}>
+                Corporate Holidays
+              </Text>
+              <Text className="text-xs text-slate-500 font-medium" numberOfLines={1}>
+                Gazetted holidays & non-working days
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
             onPress={handleOpenAddModal}
             activeOpacity={0.8}
-            className="flex-row items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 shadow-sm"
+            className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 shadow-sm"
           >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Ionicons name="add" size={17} color="#FFFFFF" />
             <Text className="text-xs font-bold text-white">Add Holiday</Text>
           </TouchableOpacity>
         </View>
