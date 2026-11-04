@@ -168,7 +168,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "DO $$\nDECLARE\n  v_target_status VARCHAR(50);\n  v_early_leave_status VARCHAR(50);\n  v_emp_id VARCHAR(50);\n  v_date TEXT;\n  v_hours TEXT;\nBEGIN\n  IF '{{ $json.action }}' = 'APPROVE' THEN\n    v_target_status := 'APPROVED';\n    v_early_leave_status := 'AVAILABLE';\n  ELSE\n    v_target_status := 'REJECTED';\n    v_early_leave_status := 'NOT_APPLICABLE';\n  END IF;\n\n  UPDATE overtime_records SET\n    status = v_target_status,\n    early_leave_status = v_early_leave_status,\n    reviewed_date = CURRENT_DATE,\n    approver = '{{ $json.approverName }}',\n    notes = '{{ $json.adminNotes }}',\n    updated_at = CURRENT_TIMESTAMP\n  WHERE id = '{{ $json.overtimeId }}'\n  RETURNING employee_id, date::TEXT, hours_formatted INTO v_emp_id, v_date, v_hours;\n\n  IF v_emp_id IS NOT NULL THEN\n    INSERT INTO notifications (\n      id, employee_id, category, title, message, action_route, priority, is_read\n    ) VALUES (\n      'notif-' || EXTRACT(EPOCH FROM NOW())::BIGINT || '-' || v_emp_id,\n      v_emp_id,\n      'OVERTIME_UPDATE',\n      CASE WHEN v_target_status = 'APPROVED' THEN 'Overtime Approved! 🎉' ELSE 'Overtime Request Rejected' END,\n      CASE WHEN v_target_status = 'APPROVED' \n           THEN 'Your overtime of ' || v_hours || ' on ' || v_date || ' was approved. You can now use this credit to leave early this week.' \n           ELSE 'Your overtime request on ' || v_date || ' was reviewed and rejected by Admin.' END,\n      '/(tabs)/overtime',\n      CASE WHEN v_target_status = 'APPROVED' THEN 'HIGH' ELSE 'NORMAL' END,\n      FALSE\n    );\n  END IF;\nEND $$;\n\nSELECT \n  id,\n  employee_id,\n  date::TEXT,\n  start_time,\n  end_time,\n  duration_minutes,\n  hours_formatted,\n  reason,\n  approver,\n  status,\n  reviewed_date::TEXT,\n  compensation_method,\n  early_leave_status,\n  notes\nFROM overtime_records\nWHERE id = '{{ $json.overtimeId }}'\nLIMIT 1;",
+        "query": "DO $$\nDECLARE\n  v_target_status VARCHAR(50);\n  v_early_leave_status VARCHAR(50);\n  v_emp_id VARCHAR(50);\n  v_date TEXT;\n  v_hours TEXT;\nBEGIN\n  IF '{{ $json.action }}' = 'APPROVE' THEN\n    v_target_status := 'APPROVED';\n    v_early_leave_status := 'AVAILABLE';\n  ELSE\n    v_target_status := 'REJECTED';\n    v_early_leave_status := 'NOT_APPLICABLE';\n  END IF;\n\n  UPDATE overtime_records SET\n    status = v_target_status,\n    early_leave_status = v_early_leave_status,\n    reviewed_date = CURRENT_DATE,\n    approver = '{{ $json.approverName }}',\n    notes = '{{ $json.adminNotes }}',\n    updated_at = CURRENT_TIMESTAMP\n  WHERE id = '{{ $json.overtimeId }}'\n  RETURNING employee_id, date::TEXT, hours_formatted INTO v_emp_id, v_date, v_hours;\n\n  IF v_emp_id IS NOT NULL THEN\n    INSERT INTO notifications (\n      id, employee_id, category, title, message, action_route, priority, is_read\n    ) VALUES (\n      'notif-' || EXTRACT(EPOCH FROM NOW())::BIGINT || '-' || v_emp_id,\n      v_emp_id,\n      'OVERTIME_UPDATE',\n      CASE WHEN v_target_status = 'APPROVED' THEN 'Overtime Approved! 🎉' ELSE 'Overtime Request Rejected' END,\n      CASE WHEN v_target_status = 'APPROVED' \n           THEN 'Your overtime of ' || v_hours || ' on ' || v_date || ' was approved. You can now use this credit to leave early this week.' \n           ELSE 'Your overtime request on ' || v_date || ' was reviewed and rejected by Admin.' END,\n      '/(tabs)/overtime',\n      CASE WHEN v_target_status = 'APPROVED' THEN 'HIGH' ELSE 'NORMAL' END,\n      FALSE\n    );\n  END IF;\nEND $$;\n\nWITH emp_tokens AS (\n  SELECT array_agg(DISTINCT edt.push_token) FILTER (WHERE edt.push_token IS NOT NULL AND edt.push_token != '') AS tokens\n  FROM overtime_records ot\n  JOIN employee_device_tokens edt ON edt.employee_id = ot.employee_id\n  WHERE ot.id = '{{ $json.overtimeId }}' AND edt.is_active = TRUE\n)\nSELECT \n  ot.id,\n  ot.employee_id,\n  ot.date::TEXT,\n  ot.start_time,\n  ot.end_time,\n  ot.duration_minutes,\n  ot.hours_formatted,\n  ot.reason,\n  ot.approver,\n  ot.status,\n  ot.reviewed_date::TEXT,\n  ot.compensation_method,\n  ot.early_leave_status,\n  ot.notes,\n  COALESCE(e.first_name || ' ' || e.last_name, ot.employee_id) AS employee_name,\n  COALESCE((SELECT tokens FROM emp_tokens), ARRAY[]::TEXT[]) AS employee_tokens\nFROM overtime_records ot\nLEFT JOIN employees e ON e.id = ot.employee_id\nWHERE ot.id = '{{ $json.overtimeId }}'\nLIMIT 1;",
         "options": {}
       },
       "id": "ot1a2b3c-0009-4000-8000-000000000009",
@@ -191,7 +191,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst routerData = $('Code - Enforce RBAC & Resolve Overtime Action').first().json || {};\n\nif (!data.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: `Overtime record ${routerData.overtimeId} not found.`\n    }\n  }];\n}\n\nconst actionVerb = routerData.action === 'APPROVE' ? 'approved' : 'rejected';\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: `Overtime record ${data.id} has been ${actionVerb} successfully.`,\n    action: routerData.action,\n    record: {\n      id: data.id,\n      employeeId: data.employee_id,\n      date: data.date,\n      startTime: data.start_time,\n      endTime: data.end_time,\n      durationMinutes: data.duration_minutes,\n      hoursFormatted: data.hours_formatted,\n      status: data.status,\n      earlyLeaveStatus: data.early_leave_status,\n      approver: data.approver,\n      reviewedDate: data.reviewed_date,\n      notes: data.notes\n    }\n  }\n}];"
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst routerData = $('Code - Enforce RBAC & Resolve Overtime Action').first().json || {};\n\nif (!data.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: `Overtime record ${routerData.overtimeId} not found.`\n    }\n  }];\n}\n\nconst actionVerb = routerData.action === 'APPROVE' ? 'approved' : 'rejected';\nconst rawTokens = Array.isArray(data.employee_tokens) ? data.employee_tokens : [];\nconst validTokens = rawTokens.filter(t => typeof t === 'string' && t.trim().length > 0);\n\nconst isApproved = routerData.action === 'APPROVE';\nconst pushMessages = validTokens.map(token => ({\n  to: token.trim(),\n  sound: 'default',\n  title: isApproved ? 'Overtime Request Approved! 🎉' : 'Overtime Request Rejected',\n  body: isApproved\n    ? `Your overtime request for ${data.hours_formatted || ''} on ${data.date} was approved. You can use it to leave early this week.`\n    : `Your overtime request on ${data.date} was rejected by Admin.`,\n  priority: 'high',\n  channelId: 'default',\n  data: {\n    type: 'OVERTIME_REVIEW',\n    overtimeId: data.id,\n    status: data.status,\n    targetScreen: '/(tabs)/overtime'\n  }\n}));\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: `Overtime record ${data.id} has been ${actionVerb} successfully.`,\n    action: routerData.action,\n    record: {\n      id: data.id,\n      employeeId: data.employee_id,\n      date: data.date,\n      startTime: data.start_time,\n      endTime: data.end_time,\n      durationMinutes: data.duration_minutes,\n      hoursFormatted: data.hours_formatted,\n      status: data.status,\n      earlyLeaveStatus: data.early_leave_status,\n      approver: data.approver,\n      reviewedDate: data.reviewed_date,\n      notes: data.notes\n    },\n    hasPushMessages: pushMessages.length > 0,\n    pushMessages: pushMessages\n  }\n}];"
       },
       "id": "ot1a2b3c-0010-4000-8000-000000000010",
       "name": "Code - Format Admin Decision Response",
@@ -205,7 +205,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
+        "responseBody": "={{ JSON.stringify($json.records ? $json : ($('Code - Format Admin Decision Response').first() ? {\n  success: true,\n  statusCode: 200,\n  message: $('Code - Format Admin Decision Response').first().json.message,\n  action: $('Code - Format Admin Decision Response').first().json.action,\n  record: $('Code - Format Admin Decision Response').first().json.record\n} : $json)) }}",
         "options": {
           "responseCode": 200,
           "responseHeaders": {
@@ -223,7 +223,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        2140,
+        2580,
         140
       ]
     },
@@ -251,6 +251,58 @@
         1260,
         420
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasPushMessages }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "ot1a2b3c-push-0001-4000-800000000001",
+      "name": "If - Has Overtime Push Tokens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://exp.host/--/api/v2/push/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.pushMessages) }}",
+        "options": {}
+      },
+      "id": "ot1a2b3c-push-0002-4000-800000000002",
+      "name": "HTTP Request - Push to Expo (Overtime Review)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        200
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -387,6 +439,35 @@
       ]
     },
     "Code - Format Admin Decision Response": {
+      "main": [
+        [
+          {
+            "node": "If - Has Overtime Push Tokens?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Overtime Push Tokens?": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Push to Expo (Overtime Review)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Push to Expo (Overtime Review)": {
       "main": [
         [
           {

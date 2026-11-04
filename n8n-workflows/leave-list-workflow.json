@@ -131,7 +131,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "={{ $json.action === 'APPROVE' ? `\nWITH target_req AS (\n  SELECT id, employee_id, leave_type, days_count, start_date\n  FROM leave_requests\n  WHERE id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'APPROVED',\n    approved_or_rejected_by = '` + $json.callerName + `',\n    reviewed_on = CURRENT_DATE,\n    comments = '` + $json.escapedComment + `'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nupd_bal AS (\n  UPDATE leave_balances b\n  SET used = b.used + tr.days_count\n  FROM target_req tr\n  WHERE b.employee_id = tr.employee_id\n    AND b.leave_type = tr.leave_type\n    AND b.year = EXTRACT(YEAR FROM tr.start_date)::INT\n  RETURNING b.*\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '` + $json.notifId + `',\n    tr.employee_id,\n    'LEAVE_UPDATE',\n    'Leave Request Approved',\n    'Your leave application (` + $json.requestId + `) has been approved by HR.',\n    '/(tabs)/leave',\n    'HIGH',\n    FALSE\n  FROM target_req tr\n  RETURNING id\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  row_to_json(b.*) AS updated_balance\nFROM upd_req r\nLEFT JOIN upd_bal b ON true;\n` : ($json.action === 'RESET' || $json.action === 'PENDING') ? `\nWITH target_req AS (\n  SELECT id, employee_id, leave_type, days_count, start_date, status\n  FROM leave_requests\n  WHERE id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'PENDING',\n    approved_or_rejected_by = NULL,\n    reviewed_on = NULL,\n    comments = 'Pending management review'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nupd_bal AS (\n  UPDATE leave_balances b\n  SET used = GREATEST(0, b.used - tr.days_count)\n  FROM target_req tr\n  WHERE tr.status = 'APPROVED'\n    AND b.employee_id = tr.employee_id\n    AND b.leave_type = tr.leave_type\n    AND b.year = EXTRACT(YEAR FROM tr.start_date)::INT\n  RETURNING b.*\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  row_to_json(b.*) AS updated_balance\nFROM upd_req r\nLEFT JOIN upd_bal b ON true;\n` : `\nWITH target_req AS (\n  SELECT id, employee_id\n  FROM leave_requests\n  WHERE id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'REJECTED',\n    approved_or_rejected_by = '` + $json.callerName + `',\n    reviewed_on = CURRENT_DATE,\n    comments = '` + $json.escapedComment + `'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '` + $json.notifId + `',\n    tr.employee_id,\n    'LEAVE_UPDATE',\n    'Leave Request Rejected',\n    'Your leave application (` + $json.requestId + `) has been rejected. Note: ' || '` + $json.escapedComment + `',\n    '/(tabs)/leave',\n    'HIGH',\n    FALSE\n  FROM target_req tr\n  RETURNING id\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  NULL AS updated_balance\nFROM upd_req r;\n` }}",
+        "query": "={{ $json.action === 'APPROVE' ? `\nWITH target_req AS (\n  SELECT lr.id, lr.employee_id, lr.leave_type, lr.days_count, lr.start_date, lr.end_date,\n         e.first_name, e.last_name\n  FROM leave_requests lr\n  LEFT JOIN employees e ON e.id = lr.employee_id\n  WHERE lr.id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'APPROVED',\n    approved_or_rejected_by = '` + $json.callerName + `',\n    reviewed_on = CURRENT_DATE,\n    comments = '` + $json.escapedComment + `'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nupd_bal AS (\n  UPDATE leave_balances b\n  SET used = b.used + tr.days_count\n  FROM target_req tr\n  WHERE b.employee_id = tr.employee_id\n    AND b.leave_type = tr.leave_type\n    AND b.year = EXTRACT(YEAR FROM tr.start_date)::INT\n  RETURNING b.*\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '` + $json.notifId + `',\n    tr.employee_id,\n    'LEAVE_UPDATE',\n    'Leave Request Approved 🎉',\n    'Your leave application (` + $json.requestId + `) has been approved by HR.',\n    '/(tabs)/leave',\n    'HIGH',\n    FALSE\n  FROM target_req tr\n  RETURNING id\n),\nemp_tokens AS (\n  SELECT array_agg(DISTINCT edt.push_token) FILTER (WHERE edt.push_token IS NOT NULL AND edt.push_token != '') AS tokens\n  FROM target_req tr\n  JOIN employee_device_tokens edt ON edt.employee_id = tr.employee_id\n  WHERE edt.is_active = TRUE\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  row_to_json(b.*) AS updated_balance,\n  tr.employee_id AS applicant_id,\n  COALESCE(tr.first_name || ' ' || tr.last_name, tr.employee_id) AS applicant_name,\n  COALESCE((SELECT tokens FROM emp_tokens), ARRAY[]::TEXT[]) AS employee_tokens\nFROM upd_req r\nLEFT JOIN target_req tr ON true\nLEFT JOIN upd_bal b ON true;\n` : ($json.action === 'RESET' || $json.action === 'PENDING') ? `\nWITH target_req AS (\n  SELECT id, employee_id, leave_type, days_count, start_date, status\n  FROM leave_requests\n  WHERE id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'PENDING',\n    approved_or_rejected_by = NULL,\n    reviewed_on = NULL,\n    comments = 'Pending management review'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nupd_bal AS (\n  UPDATE leave_balances b\n  SET used = GREATEST(0, b.used - tr.days_count)\n  FROM target_req tr\n  WHERE tr.status = 'APPROVED'\n    AND b.employee_id = tr.employee_id\n    AND b.leave_type = tr.leave_type\n    AND b.year = EXTRACT(YEAR FROM tr.start_date)::INT\n  RETURNING b.*\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  row_to_json(b.*) AS updated_balance,\n  ARRAY[]::TEXT[] AS employee_tokens\nFROM upd_req r\nLEFT JOIN upd_bal b ON true;\n` : `\nWITH target_req AS (\n  SELECT lr.id, lr.employee_id, lr.leave_type, lr.days_count, lr.start_date, lr.end_date,\n         e.first_name, e.last_name\n  FROM leave_requests lr\n  LEFT JOIN employees e ON e.id = lr.employee_id\n  WHERE lr.id = '` + $json.requestId + `'\n  LIMIT 1\n),\nupd_req AS (\n  UPDATE leave_requests\n  SET \n    status = 'REJECTED',\n    approved_or_rejected_by = '` + $json.callerName + `',\n    reviewed_on = CURRENT_DATE,\n    comments = '` + $json.escapedComment + `'\n  WHERE id = '` + $json.requestId + `'\n  RETURNING *\n),\nins_notif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    '` + $json.notifId + `',\n    tr.employee_id,\n    'LEAVE_UPDATE',\n    'Leave Request Rejected',\n    'Your leave application (` + $json.requestId + `) has been rejected. Note: ' || '` + $json.escapedComment + `',\n    '/(tabs)/leave',\n    'HIGH',\n    FALSE\n  FROM target_req tr\n  RETURNING id\n),\nemp_tokens AS (\n  SELECT array_agg(DISTINCT edt.push_token) FILTER (WHERE edt.push_token IS NOT NULL AND edt.push_token != '') AS tokens\n  FROM target_req tr\n  JOIN employee_device_tokens edt ON edt.employee_id = tr.employee_id\n  WHERE edt.is_active = TRUE\n)\nSELECT \n  row_to_json(r.*) AS leave_request,\n  NULL AS updated_balance,\n  tr.employee_id AS applicant_id,\n  COALESCE(tr.first_name || ' ' || tr.last_name, tr.employee_id) AS applicant_name,\n  COALESCE((SELECT tokens FROM emp_tokens), ARRAY[]::TEXT[]) AS employee_tokens\nFROM upd_req r\nLEFT JOIN target_req tr ON true;\n` }}",
         "options": {}
       },
       "id": "levl-0007-4000-8000-000000000007",
@@ -154,7 +154,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const items = $input.all();\nconst row = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst req = row.leave_request;\n\nif (!req) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: \"Leave request not found or failed to update.\"\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: `Leave request successfully updated to ${req.status}.`,\n    request: req,\n    balance: row.updated_balance || null\n  }\n}];"
+        "jsCode": "const items = $input.all();\nconst row = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst req = row.leave_request;\n\nif (!req) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 404,\n      error: \"Leave request not found or failed to update.\"\n    }\n  }];\n}\n\nconst rawTokens = Array.isArray(row.employee_tokens) ? row.employee_tokens : [];\nconst validTokens = rawTokens.filter(t => typeof t === 'string' && t.trim().length > 0);\n\nconst isApproved = req.status === 'APPROVED';\nconst pushMessages = validTokens.map(token => ({\n  to: token.trim(),\n  sound: 'default',\n  title: isApproved ? 'Leave Request Approved! 🎉' : 'Leave Request Rejected',\n  body: isApproved \n    ? `Your ${req.leave_type || ''} leave request for ${req.days_count || 1} day(s) from ${req.start_date} to ${req.end_date} has been approved by HR.`\n    : `Your leave request for ${req.start_date} was rejected. Note: ${req.comments || 'No comment'}`,\n  priority: 'high',\n  channelId: 'default',\n  data: {\n    type: 'LEAVE_REVIEW',\n    requestId: req.id,\n    status: req.status,\n    targetScreen: '/(tabs)/leave'\n  }\n}));\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: `Leave request successfully updated to ${req.status}.`,\n    request: req,\n    balance: row.updated_balance || null,\n    hasPushMessages: pushMessages.length > 0,\n    pushMessages: pushMessages\n  }\n}];"
       },
       "id": "levl-0008-4000-8000-000000000008",
       "name": "Code - Format Review Response",
@@ -205,7 +205,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
+        "responseBody": "={{ JSON.stringify($json.records ? $json : ($('Code - Format Review Response').first() ? {\n  success: true,\n  statusCode: 200,\n  message: $('Code - Format Review Response').first().json.message,\n  request: $('Code - Format Review Response').first().json.request,\n  balance: $('Code - Format Review Response').first().json.balance\n} : $json)) }}",
         "options": {
           "responseCode": 200,
           "responseHeaders": {
@@ -223,7 +223,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        2140,
+        2580,
         140
       ]
     },
@@ -251,6 +251,58 @@
         1260,
         420
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasPushMessages }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "levl-push-0001-4000-800000000001",
+      "name": "If - Has Review Push Tokens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://exp.host/--/api/v2/push/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.pushMessages) }}",
+        "options": {}
+      },
+      "id": "levl-push-0002-4000-800000000002",
+      "name": "HTTP Request - Push to Expo (Leave Review)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        0
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -379,7 +431,7 @@
       "main": [
         [
           {
-            "node": "Respond 200 - Success",
+            "node": "If - Has Review Push Tokens?",
             "type": "main",
             "index": 0
           }
@@ -387,6 +439,35 @@
       ]
     },
     "Code - Format List Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Review Push Tokens?": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Push to Expo (Leave Review)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Push to Expo (Leave Review)": {
       "main": [
         [
           {

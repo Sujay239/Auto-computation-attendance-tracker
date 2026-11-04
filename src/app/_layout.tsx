@@ -69,12 +69,15 @@ function GlobalNotificationListener() {
 
   useEffect(() => {
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (data?.type === 'LEAVE_APPLICATION' || data?.targetScreen === 'admin-approvals') {
+      const data = response.notification.request.content.data || {};
+      const targetScreen = String(data.targetScreen || '');
+      const type = String(data.type || '');
+
+      if (type === 'LEAVE_APPLICATION' || targetScreen.includes('approval')) {
         router.push('/(admin)/approvals' as any);
-      } else if (data?.type === 'LEAVE_STATUS' || data?.targetScreen === 'leave') {
+      } else if (type === 'LEAVE_REVIEW' || type === 'LEAVE_STATUS' || targetScreen.includes('leave')) {
         router.push('/(tabs)/leave' as any);
-      } else if (data?.type === 'OVERTIME_STATUS' || data?.targetScreen === 'overtime') {
+      } else if (type === 'OVERTIME_REVIEW' || type === 'OVERTIME_STATUS' || targetScreen.includes('overtime')) {
         router.push('/(tabs)/overtime' as any);
       } else {
         router.push('/notifications' as any);

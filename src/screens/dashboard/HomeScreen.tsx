@@ -213,10 +213,10 @@ export const HomeScreen: React.FC = () => {
 
         {/* Primary Card: Today's Live Attendance Punch */}
         <Card className="mb-4">
-          <View className="flex-row items-center justify-between mb-3">
-            <View className="flex-row items-center gap-2">
+          <View className="flex-row items-center justify-between flex-wrap gap-2 mb-3">
+            <View className="flex-row items-center gap-2 flex-1 min-w-[130px]">
               <View
-                className={`w-2.5 h-2.5 rounded-full ${
+                className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                   isCheckedIn && !isCheckedOut
                     ? 'bg-emerald-500 ring-4 ring-emerald-100'
                     : isCheckedOut
@@ -226,32 +226,34 @@ export const HomeScreen: React.FC = () => {
                     : 'bg-amber-500'
                 }`}
               />
-              <Text className="text-xs uppercase font-bold tracking-wider text-slate-500">
+              <Text className="text-xs uppercase font-bold tracking-wider text-slate-500 flex-shrink" numberOfLines={1}>
                 {isCheckedOut
                   ? 'Shift Completed'
                   : isCheckedIn
-                  ? 'Currently Checked In'
+                  ? 'Checked In'
                   : isAbsentCase
-                  ? 'Marked Absent (Punch Closed)'
+                  ? 'Marked Absent'
                   : 'Not Checked In'}
               </Text>
             </View>
 
-            <Badge
-              label={todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed 2:30 PM)' : 'Awaiting Punch')}
-              variant={
-                todayRecord?.status === 'ON_TIME'
-                  ? 'success'
-                  : todayRecord?.status === 'WITHIN_BUFFER'
-                  ? 'warning'
-                  : todayRecord?.status === 'LATE'
-                  ? 'warning'
-                  : (todayRecord?.status === 'HALF_DAY' || isAbsentCase)
-                  ? 'danger'
-                  : 'neutral'
-              }
-              size="sm"
-            />
+            <View className="shrink-0">
+              <Badge
+                label={todayRecord?.statusLabel || (isAbsentCase ? 'Absent (Closed)' : 'Awaiting Punch')}
+                variant={
+                  todayRecord?.status === 'ON_TIME'
+                    ? 'success'
+                    : todayRecord?.status === 'WITHIN_BUFFER'
+                    ? 'warning'
+                    : todayRecord?.status === 'LATE'
+                    ? 'warning'
+                    : (todayRecord?.status === 'HALF_DAY' || isAbsentCase)
+                    ? 'danger'
+                    : 'neutral'
+                }
+                size="sm"
+              />
+            </View>
           </View>
 
           {/* Time Metrics Grid */}

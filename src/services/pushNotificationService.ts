@@ -26,7 +26,8 @@ export interface PushRegistrationResult {
 }
 
 class PushNotificationService {
-  private isConfigured = false;
+  private isListenerConfigured = false;
+  private currentPushToken: string | null = null;
 
   /**
    * Initialize Android high-importance notification channel
@@ -44,7 +45,7 @@ class PushNotificationService {
           enableVibrate: true,
         });
       } catch (err) {
-        console.warn('Failed to configure Android notification channel:', err);
+        console.warn('[PushNotification] Failed to configure Android notification channel:', err);
       }
     }
   }
@@ -54,8 +55,7 @@ class PushNotificationService {
    */
   async registerForPushNotificationsAsync(): Promise<string | null> {
     if (!Device.isDevice) {
-      console.log('Push notifications require a physical device.');
-      // Still return null gracefully on simulator
+      console.log('[PushNotification] Push notifications require a physical device.');
       return null;
     }
 
@@ -70,7 +70,7 @@ class PushNotificationService {
     }
 
     if (finalStatus !== 'granted') {
-      console.log('Failed to obtain push notification permission.');
+      console.log('[PushNotification] Permission not granted for push notifications.');
       return null;
     }
 
@@ -78,11 +78,56 @@ class PushNotificationService {
       const tokenResult = await Notifications.getExpoPushTokenAsync({
         projectId: EAS_PROJECT_ID,
       });
-      return tokenResult.data;
+      this.currentPushToken = tokenResult.data;
+      console.log('[PushNotification] Expo push token obtained:', this.currentPushToken);
+      return this.currentPushToken;
     } catch (err: any) {
-      console.warn('Error fetching Expo push token:', err?.message || err);
+      console.warn('[PushNotification] Error fetching Expo push token:', err?.message || err);
+      if (err?.message?.includes('removed in Expo Go')) {
+        console.warn(
+          '[PushNotification] Remote push notifications require an EAS Build standalone APK (preview/production).'
+        );
+      }
       return null;
     }
+  }
+
+  /**
+   * Setup foreground and tap interaction listeners
+   */
+  setupNotificationListeners(onNavigate?: (route: string) => void) {
+    if (this.isListenerConfigured) return;
+    this.isListenerConfigured = true;
+
+    // 1. Foreground notification received
+    Notifications.addNotificationReceivedListener((notification) => {
+      console.log('[PushNotification] Foreground notification received:', notification.request.content.title);
+    });
+
+    // 2. User tapped on notification banner
+    Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      console.log('[PushNotification] User interacted with notification data:', data);
+      if (data && typeof data.targetScreen === 'string' && onNavigate) {
+        onNavigate(data.targetScreen);
+      }
+    });
+  }
+
+  /**
+   * Send a test local notification on device
+   */
+  async triggerLocalTestNotification(title: string, body: string, data?: Record<string, any>) {
+    await this.setupNotificationChannel();
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'default',
+        data: data || {},
+      },
+      trigger: null, // instant
+    });
   }
 
   /**
@@ -90,18 +135,21 @@ class PushNotificationService {
    */
   async syncDeviceTokenWithBackend(
     employeeId: string,
-    role: string
+    role: string,
+    force: boolean = false
   ): Promise<PushRegistrationResult> {
     try {
       const token = await this.registerForPushNotificationsAsync();
       if (!token) {
-        return { success: false, error: 'Push token unavailable or permission denied' };
+        return { success: false, error: 'Push token unavailable (requires EAS Build or permission)' };
       }
 
-      // Check if we already registered this token for this employee
-      const cached = await AsyncStorage.getItem(`${LAST_REGISTERED_TOKEN_KEY}_${employeeId}`);
-      if (cached === token) {
-        return { success: true, token };
+      // Check if we already registered this token for this employee in this storage
+      if (!force) {
+        const cached = await AsyncStorage.getItem(`${LAST_REGISTERED_TOKEN_KEY}_${employeeId}`);
+        if (cached === token) {
+          return { success: true, token };
+        }
       }
 
       // Optional FCM native device token
@@ -140,17 +188,23 @@ class PushNotificationService {
 
       if (response.ok) {
         await AsyncStorage.setItem(`${LAST_REGISTERED_TOKEN_KEY}_${employeeId}`, token);
+        console.log(`[PushNotification] Successfully registered device token for ${employeeId} (${role})`);
         return { success: true, token };
       }
 
+      const errText = await response.text().catch(() => '');
       return {
         success: false,
         token,
-        error: `Server responded with status ${response.status}`,
+        error: `Server responded with status ${response.status}: ${errText}`,
       };
     } catch (err: any) {
       return { success: false, error: err.message || 'Push registration failed' };
     }
+  }
+
+  getToken(): string | null {
+    return this.currentPushToken;
   }
 }
 

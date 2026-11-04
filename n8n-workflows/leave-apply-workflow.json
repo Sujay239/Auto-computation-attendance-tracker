@@ -111,7 +111,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH \nbal AS (\n  SELECT total, used, available\n  FROM leave_balances\n  WHERE employee_id = '{{ $json.employeeId }}'\n    AND leave_type = '{{ $json.leaveType }}'\n    AND year = EXTRACT(YEAR FROM '{{ $json.startDate }}'::DATE)::INT\n  LIMIT 1\n),\nins AS (\n  INSERT INTO leave_requests (\n    id, employee_id, leave_type, duration_type,\n    start_date, end_date, days_count, reason,\n    status, applied_on, whatsapp_notice_acknowledged,\n    comments\n  ) VALUES (\n    '{{ $json.leaveId }}',\n    '{{ $json.employeeId }}',\n    '{{ $json.leaveType }}',\n    '{{ $json.durationType }}',\n    '{{ $json.startDate }}'::DATE,\n    '{{ $json.effectiveEndDate }}'::DATE,\n    {{ $json.daysCount }},\n    '{{ $json.escapedReason }}',\n    'PENDING',\n    CURRENT_DATE,\n    {{ $json.whatsappNoticeAcknowledged ? 'TRUE' : 'FALSE' }},\n    'Pending management approval and official WhatsApp group validation.'\n  )\n  RETURNING \n    id, employee_id, leave_type, duration_type,\n    start_date::TEXT, end_date::TEXT, days_count, reason,\n    status, applied_on::TEXT, whatsapp_notice_acknowledged,\n    comments, created_at::TEXT\n),\nnotif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  ) VALUES (\n    '{{ $json.notifId }}',\n    '{{ $json.employeeId }}',\n    'LEAVE_UPDATE',\n    'Leave Request Submitted',\n    'Your request for {{ $json.daysCount }} day(s) {{ $json.leaveType }} leave ({{ $json.startDate }} to {{ $json.effectiveEndDate }}) has been submitted for approval.',\n    '/(tabs)/leave',\n    'NORMAL',\n    FALSE\n  )\n  RETURNING id\n)\nSELECT \n  row_to_json(ins.*) AS leave_request,\n  row_to_json(bal.*) AS current_balance\nFROM ins\nLEFT JOIN bal ON true;",
+        "query": "WITH \nemp AS (\n  SELECT first_name, last_name FROM employees WHERE id = '{{ $json.employeeId }}' LIMIT 1\n),\nbal AS (\n  SELECT total, used, available\n  FROM leave_balances\n  WHERE employee_id = '{{ $json.employeeId }}'\n    AND leave_type = '{{ $json.leaveType }}'\n    AND year = EXTRACT(YEAR FROM '{{ $json.startDate }}'::DATE)::INT\n  LIMIT 1\n),\nins AS (\n  INSERT INTO leave_requests (\n    id, employee_id, leave_type, duration_type,\n    start_date, end_date, days_count, reason,\n    status, applied_on, whatsapp_notice_acknowledged,\n    comments\n  ) VALUES (\n    '{{ $json.leaveId }}',\n    '{{ $json.employeeId }}',\n    '{{ $json.leaveType }}',\n    '{{ $json.durationType }}',\n    '{{ $json.startDate }}'::DATE,\n    '{{ $json.effectiveEndDate }}'::DATE,\n    {{ $json.daysCount }},\n    '{{ $json.escapedReason }}',\n    'PENDING',\n    CURRENT_DATE,\n    {{ $json.whatsappNoticeAcknowledged ? 'TRUE' : 'FALSE' }},\n    'Pending management approval and official WhatsApp group validation.'\n  )\n  RETURNING \n    id, employee_id, leave_type, duration_type,\n    start_date::TEXT, end_date::TEXT, days_count, reason,\n    status, applied_on::TEXT, whatsapp_notice_acknowledged,\n    comments, created_at::TEXT\n),\nnotif AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  ) VALUES (\n    '{{ $json.notifId }}',\n    '{{ $json.employeeId }}',\n    'LEAVE_UPDATE',\n    'Leave Request Submitted',\n    'Your request for {{ $json.daysCount }} day(s) {{ $json.leaveType }} leave ({{ $json.startDate }} to {{ $json.effectiveEndDate }}) has been submitted for approval.',\n    '/(tabs)/leave',\n    'NORMAL',\n    FALSE\n  )\n  RETURNING id\n),\nnotif_admins AS (\n  INSERT INTO notifications (\n    id, employee_id, category, title, message, action_route, priority, is_read\n  )\n  SELECT \n    'notif-adm-' || EXTRACT(EPOCH FROM NOW())::BIGINT || '-' || a.id,\n    a.id,\n    'LEAVE_UPDATE',\n    'New Leave Request: ' || COALESCE(e.first_name || ' ' || e.last_name, '{{ $json.employeeId }}'),\n    COALESCE(e.first_name || ' ' || e.last_name, 'Employee') || ' applied for ' || '{{ $json.daysCount }}' || ' day(s) ' || '{{ $json.leaveType }}' || ' leave (' || '{{ $json.startDate }}' || ' to ' || '{{ $json.effectiveEndDate }}' || '). Reason: ' || '{{ $json.escapedReason }}',\n    '/(tabs)/approvals',\n    'HIGH',\n    FALSE\n  FROM employees a\n  CROSS JOIN emp e\n  WHERE (a.role = 'ADMIN' OR a.id LIKE 'ADM%')\n  RETURNING id\n),\nadmin_tokens AS (\n  SELECT array_agg(DISTINCT push_token) FILTER (WHERE push_token IS NOT NULL AND push_token != '') AS tokens\n  FROM employee_device_tokens\n  WHERE (role = 'ADMIN' OR employee_id LIKE 'ADM%') AND is_active = TRUE\n)\nSELECT \n  row_to_json(ins.*) AS leave_request,\n  row_to_json(bal.*) AS current_balance,\n  COALESCE((SELECT first_name || ' ' || last_name FROM emp), '{{ $json.employeeId }}') AS applicant_name,\n  COALESCE((SELECT tokens FROM admin_tokens), ARRAY[]::TEXT[]) AS admin_tokens\nFROM ins\nLEFT JOIN bal ON true;",
         "options": {}
       },
       "id": "lev1a2b3-0006-4000-8000-000000000006",
@@ -134,7 +134,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst req = data.leave_request || {};\nconst bal = data.current_balance || {};\n\nif (!req.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 500,\n      error: \"Failed to record leave request in database.\"\n    }\n  }];\n}\n\nconst avail = parseFloat(bal.available || '0');\nconst requested = parseFloat(req.days_count || '0');\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: \"Leave request submitted successfully. Pending admin review and WhatsApp notice.\",\n    request: {\n      id: req.id,\n      employeeId: req.employee_id,\n      leaveType: req.leave_type,\n      durationType: req.duration_type,\n      startDate: req.start_date,\n      endDate: req.end_date,\n      daysCount: requested,\n      reason: req.reason,\n      status: req.status || 'PENDING',\n      appliedOn: req.applied_on,\n      whatsappNoticeAcknowledged: req.whatsapp_notice_acknowledged,\n      comments: req.comments,\n      createdAt: req.created_at\n    },\n    balance: {\n      leaveType: req.leave_type,\n      total: parseFloat(bal.total || '0'),\n      used: parseFloat(bal.used || '0'),\n      available: avail,\n      projectedRemaining: Math.max(0, avail - requested)\n    }\n  }\n}];"
+        "jsCode": "const items = $input.all();\nconst data = (items.length > 0 && items[0].json) ? items[0].json : {};\nconst req = data.leave_request || {};\nconst bal = data.current_balance || {};\n\nif (!req.id) {\n  return [{\n    json: {\n      success: false,\n      statusCode: 500,\n      error: \"Failed to record leave request in database.\"\n    }\n  }];\n}\n\nconst avail = parseFloat(bal.available || '0');\nconst requested = parseFloat(req.days_count || '0');\nconst applicantName = data.applicant_name || req.employee_id || 'Staff Member';\n\n// Prepare Expo push messages for active admins\nconst rawTokens = Array.isArray(data.admin_tokens) ? data.admin_tokens : [];\nconst validTokens = rawTokens.filter(t => typeof t === 'string' && t.trim().length > 0);\n\nconst pushMessages = validTokens.map(token => ({\n  to: token.trim(),\n  sound: 'default',\n  title: `New Leave Request - ${applicantName}`,\n  body: `${applicantName} applied for ${requested} day(s) ${req.leave_type} leave (${req.start_date} to ${req.end_date}). Reason: ${req.reason || 'No reason'}`,\n  priority: 'high',\n  channelId: 'default',\n  data: {\n    type: 'LEAVE_APPLICATION',\n    leaveId: req.id,\n    employeeId: req.employee_id,\n    targetScreen: '/(tabs)/approvals'\n  }\n}));\n\nreturn [{\n  json: {\n    success: true,\n    statusCode: 200,\n    message: \"Leave request submitted successfully. Pending admin review and WhatsApp notice.\",\n    request: {\n      id: req.id,\n      employeeId: req.employee_id,\n      leaveType: req.leave_type,\n      durationType: req.duration_type,\n      startDate: req.start_date,\n      endDate: req.end_date,\n      daysCount: requested,\n      reason: req.reason,\n      status: req.status || 'PENDING',\n      appliedOn: req.applied_on,\n      whatsappNoticeAcknowledged: req.whatsapp_notice_acknowledged,\n      comments: req.comments,\n      createdAt: req.created_at\n    },\n    balance: {\n      leaveType: req.leave_type,\n      total: parseFloat(bal.total || '0'),\n      used: parseFloat(bal.used || '0'),\n      available: avail,\n      projectedRemaining: Math.max(0, avail - requested)\n    },\n    hasPushMessages: pushMessages.length > 0,\n    pushMessages: pushMessages\n  }\n}];"
       },
       "id": "lev1a2b3-0007-4000-8000-000000000007",
       "name": "Code - Format Leave Application Response",
@@ -148,7 +148,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  statusCode: 200,\n  message: $('Code - Format Leave Application Response').first().json.message,\n  request: $('Code - Format Leave Application Response').first().json.request,\n  balance: $('Code - Format Leave Application Response').first().json.balance\n}) }}",
         "options": {
           "responseCode": 200,
           "responseHeaders": {
@@ -166,7 +166,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1920,
+        2360,
         100
       ]
     },
@@ -194,6 +194,58 @@
         1260,
         420
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasPushMessages }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "lev1a2b3-push-0001-4000-800000000001",
+      "name": "If - Has Admin Push Tokens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://exp.host/--/api/v2/push/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.pushMessages) }}",
+        "options": {}
+      },
+      "id": "lev1a2b3-push-0002-4000-800000000002",
+      "name": "HTTP Request - Push to Expo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2140,
+        20
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -290,6 +342,35 @@
       ]
     },
     "Code - Format Leave Application Response": {
+      "main": [
+        [
+          {
+            "node": "If - Has Admin Push Tokens?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Has Admin Push Tokens?": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Push to Expo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 - Leave Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Push to Expo": {
       "main": [
         [
           {
