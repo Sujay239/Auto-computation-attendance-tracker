@@ -36,7 +36,7 @@
   "devDependencies": {
     "@types/react": "~19.3.0",
     "eas-cli": "^27.4.1",
-    "typescript": "~6.0.3"
+    "typescript": "~5.9.3"
   },
   "scripts": {
     "start": "expo start",
